@@ -172,6 +172,22 @@ namespace NuGet.Commands
 
             lockFileLib.NativeLibraries.AddRange(nativeGroup);
 
+            // Build
+            var buildGroup = GetLockFileItems(
+                orderedCriteria,
+                contentItems,
+                targetGraph.Conventions.Patterns.MSBuildFiles);
+
+            lockFileLib.Build.AddRange(buildGroup);
+
+            // Build cross targeting
+            var buildCrossTargetingGroup = GetLockFileItems(
+                orderedCriteria,
+                contentItems,
+                targetGraph.Conventions.Patterns.MSBuildCrossTargetingFiles);
+
+            lockFileLib.BuildCrossTargeting.AddRange(buildCrossTargetingGroup);
+
             // content v2 items
             var contentFileGroups = contentItems.FindItemGroups(targetGraph.Conventions.Patterns.ContentFiles);
 

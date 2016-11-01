@@ -11,6 +11,9 @@ using Microsoft.VisualStudio.ComponentModelHost;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Threading;
 using Task = System.Threading.Tasks.Task;
+using Microsoft.VisualStudio.Shell.Interop;
+using Microsoft.VisualStudio;
+using System.Linq;
 
 namespace NuGet.PackageManagement.VisualStudio
 {
@@ -19,7 +22,7 @@ namespace NuGet.PackageManagement.VisualStudio
     /// </summary>
     [Export(typeof(ISolutionRestoreWorker))]
     [PartCreationPolicy(CreationPolicy.Shared)]
-    internal sealed class SolutionRestoreWorker : ISolutionRestoreWorker, IDisposable
+    internal sealed class SolutionRestoreWorker : ISolutionRestoreWorker, IVsSolutionEvents, IVsSolutionLoadEvents, IDisposable
     {
         private const int SaneIdleTimeoutMs = 400;
         private const int SaneRequestQueueLimit = 150;
@@ -29,7 +32,10 @@ namespace NuGet.PackageManagement.VisualStudio
         private readonly ErrorListProvider _errorListProvider;
         private readonly EnvDTE.SolutionEvents _solutionEvents;
         private readonly IComponentModel _componentModel;
+        private readonly IVsSolutionManager _solutionManager;
+        private readonly IVsSolution _vsSolution;
 
+        private uint _cookie;
         private CancellationTokenSource _workerCts;
         private Lazy<Task> _backgroundJobRunner;
         private BackgroundRestoreOperation _pendingRestore;
@@ -54,6 +60,22 @@ namespace NuGet.PackageManagement.VisualStudio
 
             _componentModel = _serviceProvider.GetService<SComponentModel, IComponentModel>();
 
+            IVsSolution vsSolution = serviceProvider.GetService(typeof(SVsSolution)) as IVsSolution;
+            if (vsSolution != null)
+            {
+                _vsSolution = vsSolution;
+                if (vsSolution.AdviseSolutionEvents(this, out _cookie) == VSConstants.S_OK)
+                {
+                    Debug.Assert(_cookie != 0);
+                }
+                else
+                {
+                    _cookie = 0;
+                }
+            }
+
+            _solutionManager = _componentModel.GetService<IVsSolutionManager>();
+
             var dte = _serviceProvider.GetDTE();
             _solutionEvents = dte.Events.SolutionEvents;
             _solutionEvents.AfterClosing += SolutionEvents_AfterClosing;
@@ -68,6 +90,11 @@ namespace NuGet.PackageManagement.VisualStudio
             Reset(isDisposing: true);
             _solutionEvents.AfterClosing -= SolutionEvents_AfterClosing;
             _errorListProvider.Dispose();
+
+            if (_cookie != 0 && _vsSolution != null)
+            {
+                _vsSolution.UnadviseSolutionEvents(_cookie);
+            }
         }
 
         private void Reset(bool isDisposing = false)
@@ -109,11 +136,6 @@ namespace NuGet.PackageManagement.VisualStudio
         public Task<bool> ScheduleRestoreAsync(
             SolutionRestoreRequest request, CancellationToken token)
         {
-            // ensure background runner has started
-            // ignore the value
-            var runner = _backgroundJobRunner.Value;
-            Trace.TraceInformation($"Scheduling background solution restore. The background runner's status is '{runner.Status}'");
-
             var pendingRestore = _pendingRestore;
 
             // on-board request onto pending restore operation
@@ -267,6 +289,101 @@ namespace NuGet.PackageManagement.VisualStudio
                 return await job.ExecuteAsync(jobArgs, _restoreJobContext, jobCts.Token);
             }
         }
+
+        #region IVsSolutionEvents (mandatory but unused implementation)
+        public int OnAfterOpenProject(IVsHierarchy pHierarchy, int fAdded)
+        {
+            return VSConstants.S_OK;
+        }
+
+        public int OnQueryCloseProject(IVsHierarchy pHierarchy, int fRemoving, ref int pfCancel)
+        {
+            return VSConstants.S_OK;
+        }
+
+        public int OnBeforeCloseProject(IVsHierarchy pHierarchy, int fRemoved)
+        {
+            return VSConstants.S_OK;
+        }
+
+        public int OnAfterLoadProject(IVsHierarchy pStubHierarchy, IVsHierarchy pRealHierarchy)
+        {
+            return VSConstants.S_OK;
+        }
+
+        public int OnQueryUnloadProject(IVsHierarchy pRealHierarchy, ref int pfCancel)
+        {
+            return VSConstants.S_OK;
+        }
+
+        public int OnBeforeUnloadProject(IVsHierarchy pRealHierarchy, IVsHierarchy pStubHierarchy)
+        {
+            return VSConstants.S_OK;
+        }
+
+        public int OnAfterOpenSolution(object pUnkReserved, int fNewSolution)
+        {
+            return VSConstants.S_OK;
+        }
+
+        public int OnQueryCloseSolution(object pUnkReserved, ref int pfCancel)
+        {
+            return VSConstants.S_OK;
+        }
+
+        public int OnBeforeCloseSolution(object pUnkReserved)
+        {
+            return VSConstants.S_OK;
+        }
+
+        public int OnAfterCloseSolution(object pUnkReserved)
+        {
+            return VSConstants.S_OK;
+        }
+        #endregion
+
+        #region IVsSolutionLoadEvents (Only useful implementation is OnAfterBackgroundSolutionLoadComplete)
+        public int OnBeforeOpenSolution(string pszSolutionFilename)
+        {
+            return VSConstants.S_OK;
+        }
+
+        public int OnBeforeBackgroundSolutionLoadBegins()
+        {
+            return VSConstants.S_OK;
+        }
+
+        public int OnQueryBackgroundLoadProjectBatch(out bool pfShouldDelayLoadToNextIdle)
+        {
+            pfShouldDelayLoadToNextIdle = false;
+            return VSConstants.S_OK;
+        }
+
+        public int OnBeforeLoadProjectBatch(bool fIsBackgroundIdleBatch)
+        {
+            return VSConstants.S_OK;
+        }
+
+        public int OnAfterLoadProjectBatch(bool fIsBackgroundIdleBatch)
+        {            
+            return VSConstants.S_OK;
+        }
+
+        public int OnAfterBackgroundSolutionLoadComplete()
+        {
+#if VS15
+            var projects = _solutionManager.GetNuGetProjects();
+            if (projects.Any(project => (project is CpsPackageReferenceProject)))
+            {
+                // ensure background runner has started
+                // ignore the value
+                var runner = _backgroundJobRunner.Value;
+                Trace.TraceInformation($"Scheduling background solution restore. The background runner's status is '{runner.Status}'");
+            }
+#endif
+            return VSConstants.S_OK;
+        }
+#endregion
 
         private class BackgroundRestoreOperation
             : IEquatable<BackgroundRestoreOperation>, IDisposable

@@ -67,18 +67,19 @@ namespace NuGet.PackageManagement.VisualStudio
                 throw new ArgumentNullException(nameof(_solutionManager));
             }
 
-            IVsSolution vsSolution = serviceProvider.GetService(typeof(SVsSolution)) as IVsSolution;
-            if (vsSolution != null)
+            _vsSolution = serviceProvider.GetService(typeof(SVsSolution)) as IVsSolution;
+            if (_vsSolution == null)
             {
-                _vsSolution = vsSolution;
-                if (vsSolution.AdviseSolutionEvents(this, out _cookie) == VSConstants.S_OK)
-                {
-                    Debug.Assert(_cookie != 0);
-                }
-                else
-                {
-                    _cookie = 0;
-                }
+                throw new ArgumentNullException(nameof(_vsSolution));
+            }
+
+            if (_vsSolution.AdviseSolutionEvents(this, out _cookie) == VSConstants.S_OK)
+            {
+                Debug.Assert(_cookie != 0);
+            }
+            else
+            {
+                _cookie = 0;
             }
 #endif
             var dte = _serviceProvider.GetDTE();
@@ -383,7 +384,6 @@ namespace NuGet.PackageManagement.VisualStudio
                 // ensure background runner has started
                 // ignore the value
                 var runner = _backgroundJobRunner.Value;
-                Trace.TraceInformation($"Scheduling background solution restore. The background runner's status is '{runner.Status}'");
             }
 #endif
             return VSConstants.S_OK;

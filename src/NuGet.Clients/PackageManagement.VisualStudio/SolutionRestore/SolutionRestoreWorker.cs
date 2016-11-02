@@ -5,15 +5,15 @@ using System;
 using System.Collections.Concurrent;
 using System.ComponentModel.Composition;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.ComponentModelHost;
 using Microsoft.VisualStudio.Shell;
+using Microsoft.VisualStudio.Shell.Interop;
 using Microsoft.VisualStudio.Threading;
 using Task = System.Threading.Tasks.Task;
-using Microsoft.VisualStudio.Shell.Interop;
-using Microsoft.VisualStudio;
-using System.Linq;
 
 namespace NuGet.PackageManagement.VisualStudio
 {
@@ -49,7 +49,8 @@ namespace NuGet.PackageManagement.VisualStudio
         [ImportingConstructor]
         public SolutionRestoreWorker(
             [Import(typeof(SVsServiceProvider))]
-            IServiceProvider serviceProvider)
+            IServiceProvider serviceProvider,
+            IVsSolutionManager solutionManager)
         {
             if (serviceProvider == null)
             {
@@ -59,23 +60,29 @@ namespace NuGet.PackageManagement.VisualStudio
             _serviceProvider = serviceProvider;
 
             _componentModel = _serviceProvider.GetService<SComponentModel, IComponentModel>();
-
-            IVsSolution vsSolution = serviceProvider.GetService(typeof(SVsSolution)) as IVsSolution;
-            if (vsSolution != null)
+            
+            if (solutionManager == null)
             {
-                _vsSolution = vsSolution;
-                if (vsSolution.AdviseSolutionEvents(this, out _cookie) == VSConstants.S_OK)
-                {
-                    Debug.Assert(_cookie != 0);
-                }
-                else
-                {
-                    _cookie = 0;
-                }
+                throw new ArgumentNullException(nameof(solutionManager));
             }
 
-            _solutionManager = _componentModel.GetService<IVsSolutionManager>();
+            _solutionManager = solutionManager;
+#if VS15
+            _vsSolution = serviceProvider.GetService(typeof(SVsSolution)) as IVsSolution;
+            if (_vsSolution == null)
+            {
+                throw new ArgumentNullException(nameof(_vsSolution));
+            }
 
+            if (_vsSolution.AdviseSolutionEvents(this, out _cookie) == VSConstants.S_OK)
+            {
+                Debug.Assert(_cookie != 0);
+            }
+            else
+            {
+                _cookie = 0;
+            }
+#endif
             var dte = _serviceProvider.GetDTE();
             _solutionEvents = dte.Events.SolutionEvents;
             _solutionEvents.AfterClosing += SolutionEvents_AfterClosing;
@@ -290,7 +297,7 @@ namespace NuGet.PackageManagement.VisualStudio
             }
         }
 
-        #region IVsSolutionEvents (mandatory but unused implementation)
+#region IVsSolutionEvents (mandatory but unused implementation)
         public int OnAfterOpenProject(IVsHierarchy pHierarchy, int fAdded)
         {
             return VSConstants.S_OK;
@@ -340,9 +347,9 @@ namespace NuGet.PackageManagement.VisualStudio
         {
             return VSConstants.S_OK;
         }
-        #endregion
+#endregion
 
-        #region IVsSolutionLoadEvents (Only useful implementation is OnAfterBackgroundSolutionLoadComplete)
+#region IVsSolutionLoadEvents (Only useful implementation is OnAfterBackgroundSolutionLoadComplete)
         public int OnBeforeOpenSolution(string pszSolutionFilename)
         {
             return VSConstants.S_OK;
@@ -378,7 +385,6 @@ namespace NuGet.PackageManagement.VisualStudio
                 // ensure background runner has started
                 // ignore the value
                 var runner = _backgroundJobRunner.Value;
-                Trace.TraceInformation($"Scheduling background solution restore. The background runner's status is '{runner.Status}'");
             }
 #endif
             return VSConstants.S_OK;

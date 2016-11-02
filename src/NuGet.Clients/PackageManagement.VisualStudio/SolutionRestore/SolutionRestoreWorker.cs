@@ -33,9 +33,13 @@ namespace NuGet.PackageManagement.VisualStudio
         private readonly EnvDTE.SolutionEvents _solutionEvents;
         private readonly IComponentModel _componentModel;
         private readonly IVsSolutionManager _solutionManager;
-        private readonly IVsSolution _vsSolution;
 
+        // these properties are specific to VS15 since they are use to attach to solution events
+        // which is further used to start bg job runner to schedule auto restore
+#if VS15
+        private readonly IVsSolution _vsSolution;
         private uint _cookie;
+#endif
         private CancellationTokenSource _workerCts;
         private Lazy<Task> _backgroundJobRunner;
         private BackgroundRestoreOperation _pendingRestore;
@@ -97,11 +101,12 @@ namespace NuGet.PackageManagement.VisualStudio
             Reset(isDisposing: true);
             _solutionEvents.AfterClosing -= SolutionEvents_AfterClosing;
             _errorListProvider.Dispose();
-
+#if VS15
             if (_cookie != 0 && _vsSolution != null)
             {
                 _vsSolution.UnadviseSolutionEvents(_cookie);
             }
+#endif
         }
 
         private void Reset(bool isDisposing = false)

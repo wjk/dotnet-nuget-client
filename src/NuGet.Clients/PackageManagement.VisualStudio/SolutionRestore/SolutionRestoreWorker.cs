@@ -71,8 +71,13 @@ namespace NuGet.PackageManagement.VisualStudio
             }
 
             _solutionManager = solutionManager;
+
+            var dte = _serviceProvider.GetDTE();
+            _solutionEvents = dte.Events.SolutionEvents;
+            _solutionEvents.AfterClosing += SolutionEvents_AfterClosing;
+
+            _errorListProvider = new ErrorListProvider(_serviceProvider);
 #if VS15
-            _solutionManager.NuGetProjectAdded += OnNuGetProjectAdded;
             _vsSolution = serviceProvider.GetService(typeof(SVsSolution)) as IVsSolution;
             if (_vsSolution == null)
             {
@@ -88,12 +93,6 @@ namespace NuGet.PackageManagement.VisualStudio
                 _cookie = 0;
             }
 #endif
-            var dte = _serviceProvider.GetDTE();
-            _solutionEvents = dte.Events.SolutionEvents;
-            _solutionEvents.AfterClosing += SolutionEvents_AfterClosing;
-
-            _errorListProvider = new ErrorListProvider(_serviceProvider);
-
             Reset();
         }
 
@@ -103,22 +102,9 @@ namespace NuGet.PackageManagement.VisualStudio
             _solutionEvents.AfterClosing -= SolutionEvents_AfterClosing;
             _errorListProvider.Dispose();
 #if VS15
-            _solutionManager.NuGetProjectAdded -= OnNuGetProjectAdded;
             if (_cookie != 0 && _vsSolution != null)
             {
                 _vsSolution.UnadviseSolutionEvents(_cookie);
-            }
-#endif
-        }
-
-        private void OnNuGetProjectAdded(object sender, NuGetProjectEventArgs e)
-        {
-#if VS15
-            if(e != null && e.NuGetProject != null && (e.NuGetProject is CpsPackageReferenceProject))
-            {
-                // ensure background runner has started for CPS project if not yet started
-                // ignore the value
-                var runner = _backgroundJobRunner.Value;
             }
 #endif
         }
@@ -162,6 +148,13 @@ namespace NuGet.PackageManagement.VisualStudio
         public Task<bool> ScheduleRestoreAsync(
             SolutionRestoreRequest request, CancellationToken token)
         {
+            if (_solutionManager.IsSolutionFullyLoaded)
+            {
+                // start background runner if not yet started
+                // ignore the value
+                var runner = _backgroundJobRunner.Value;
+            }
+
             var pendingRestore = _pendingRestore;
 
             // on-board request onto pending restore operation

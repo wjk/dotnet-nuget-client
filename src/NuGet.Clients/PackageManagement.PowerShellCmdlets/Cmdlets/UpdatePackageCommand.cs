@@ -273,13 +273,13 @@ namespace NuGet.PackageManagement.PowerShellCmdlets
             {
                 var installedPackages = await project.GetInstalledPackagesAsync(Token);
 
-                var installedPackage = installedPackages.Where(
+                var installedPackage = installedPackages.FirstOrDefault(
                     package => package.PackageIdentity.Id.Equals(packageId, StringComparison.OrdinalIgnoreCase));
 
-                if (installedPackage.Any())
+                if (installedPackage != null)
                 {
                     // update allow prerelease flag based on installed version
-                    _allowPrerelease = _allowPrerelease || installedPackage.First().PackageIdentity.Version.IsPrerelease;
+                    _allowPrerelease = _allowPrerelease || installedPackage.PackageIdentity.Version.IsPrerelease;
                     return true;
                 }
             }

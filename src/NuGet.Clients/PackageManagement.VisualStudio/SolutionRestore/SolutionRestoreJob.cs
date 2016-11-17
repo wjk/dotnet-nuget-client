@@ -14,8 +14,10 @@ using Microsoft.VisualStudio.Threading;
 using NuGet.Commands;
 using NuGet.Configuration;
 using NuGet.PackageManagement.UI;
+using NuGet.Packaging;
 using NuGet.ProjectManagement;
 using NuGet.ProjectManagement.Projects;
+using NuGet.ProjectModel;
 using NuGet.Protocol.Core.Types;
 using Task = System.Threading.Tasks.Task;
 
@@ -29,10 +31,11 @@ namespace NuGet.PackageManagement.VisualStudio
     {
         private readonly EnvDTE.DTE _dte;
         private readonly IPackageRestoreManager _packageRestoreManager;
-        private readonly ISolutionManager _solutionManager;
+        private readonly IVsSolutionManager _solutionManager;
         private readonly ISourceRepositoryProvider _sourceRepositoryProvider;
         private readonly ISettings _settings;
         private readonly RestoreOperationLogger _logger;
+        private readonly IDeferredProjectWorkspaceService _deferredWorkspaceService;
 
         private string _dependencyGraphProjectCacheHash;
         private INuGetProjectContext _nuGetProjectContext;
@@ -58,6 +61,7 @@ namespace NuGet.PackageManagement.VisualStudio
         private SolutionRestoreJob(
             IServiceProvider serviceProvider,
             IComponentModel componentModel,
+            IDeferredProjectWorkspaceService deferredWorkspaceService,
             RestoreOperationLogger logger)
         {
             _packageRestoreManager = componentModel.GetService<IPackageRestoreManager>();
@@ -88,18 +92,25 @@ namespace NuGet.PackageManagement.VisualStudio
                 throw new ArgumentNullException(nameof(_settings));
             }
 
+            _deferredWorkspaceService = deferredWorkspaceService;
             _dte = serviceProvider.GetDTE();
             _logger = logger;
         }
 
         public static async Task<SolutionRestoreJob> CreateAsync(
             IServiceProvider serviceProvider,
+            IDeferredProjectWorkspaceService deferredWorkspaceService,
             RestoreOperationLogger logger,
             CancellationToken token)
         {
             if (serviceProvider == null)
             {
                 throw new ArgumentNullException(nameof(serviceProvider));
+            }
+
+            if (deferredWorkspaceService == null)
+            {
+                throw new ArgumentNullException(nameof(deferredWorkspaceService));
             }
 
             if (logger == null)
@@ -110,7 +121,7 @@ namespace NuGet.PackageManagement.VisualStudio
             return await ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                return new SolutionRestoreJob(serviceProvider, serviceProvider.GetComponentModel(), logger);
+                return new SolutionRestoreJob(serviceProvider, serviceProvider.GetComponentModel(), deferredWorkspaceService, logger);
             });
         }
 
@@ -173,21 +184,32 @@ namespace NuGet.PackageManagement.VisualStudio
                 var solutionDirectory = _solutionManager.SolutionDirectory;
                 var isSolutionAvailable = _solutionManager.IsSolutionAvailable;
 
-                // make sure all projects are loaded before start to restore. Since
-                // projects might not be loaded when DPL is enabled.
-                _solutionManager.EnsureSolutionIsLoaded();
+                // Check if solution has deferred projects
+                var packageReferencesDict = new Dictionary<PackageReference, List<string>>(new PackageReferenceComparer());
+                var packagesSpecs = new List<PackageSpec>();
+                if (_solutionManager.IsSolutionDPLEnabled && _solutionManager.SolutionHasDeferredProjects())
+                {
+                    var deferredProjectsPath = _solutionManager.GetDeferredProjectsFilePath();
+
+                    var deferredProjectsData = await DeferredProjectRestoreUtility.GetDeferredProjectsData(_deferredWorkspaceService, deferredProjectsPath, token);
+                    packageReferencesDict = deferredProjectsData.PackageReferenceDict;
+                    packagesSpecs = deferredProjectsData.PackageSpecs;
+                }
 
                 // Get the projects from the SolutionManager
                 // Note that projects that are not supported by NuGet, will not show up in this list
                 projects = _solutionManager.GetNuGetProjects();
 
                 // Check if there are any projects that are not INuGetIntegratedProject, that is,
-                // projects with packages.config. If so, perform package restore on them
-                if (projects.Any(project => !(project is INuGetIntegratedProject)))
+                // projects with packages.config. OR 
+                // any of the deferred project is type of packages.config, If so, perform package restore on them
+                if (projects.Any(project => !(project is INuGetIntegratedProject)) ||
+                    packageReferencesDict.Any())
                 {
                     await RestorePackagesOrCheckForMissingPackagesAsync(
                         solutionDirectory,
                         isSolutionAvailable,
+                        packageReferencesDict,
                         token);
                 }
 
@@ -199,6 +221,7 @@ namespace NuGet.PackageManagement.VisualStudio
                     dependencyGraphProjects,
                     forceRestore,
                     isSolutionAvailable,
+                    packagesSpecs,
                     token);
             }
             finally
@@ -260,14 +283,24 @@ namespace NuGet.PackageManagement.VisualStudio
             }
         }
 
+        private bool IsProjectBuildIntegrated(PackageSpec project)
+        {
+            return project.RestoreMetadata.OutputType == RestoreOutputType.NETCore ||
+                project.RestoreMetadata.OutputType == RestoreOutputType.UAP ||
+                project.RestoreMetadata.OutputType == RestoreOutputType.DotnetCliTool ||
+                project.RestoreMetadata.OutputType == RestoreOutputType.Standalone;
+        }
+
         private async Task RestorePackageSpecProjectsAsync(
             List<IDependencyGraphProject> projects,
             bool forceRestore,
             bool isSolutionAvailable,
+            List<PackageSpec> packageSpecs,
             CancellationToken token)
         {
-            // Only continue if there are some projects.
-            if (!projects.Any())
+            // Only continue if there are some  build integrated type projects.
+            if (!(projects.Any(project => project is BuildIntegratedNuGetProject) || 
+                packageSpecs.Any(project => IsProjectBuildIntegrated(project))))
             {
                 return;
             }
@@ -298,6 +331,9 @@ namespace NuGet.PackageManagement.VisualStudio
                 // Cache p2ps discovered from DTE
                 var cacheContext = new DependencyGraphCacheContext(_logger);
                 var pathContext = NuGetPathContext.Create(_settings);
+
+                // add deferred projects package spec in cacheContext packageSpecCache
+                cacheContext.DeferredPackageSpecs.AddRange(packageSpecs);
 
                 var isRestoreRequired = await DependencyGraphRestoreUtility.IsRestoreRequiredAsync(
                     _solutionManager,
@@ -420,6 +456,7 @@ namespace NuGet.PackageManagement.VisualStudio
         private async Task RestorePackagesOrCheckForMissingPackagesAsync(
             string solutionDirectory,
             bool isSolutionAvailable,
+            Dictionary<PackageReference, List<string>> packageReferencesDict,
             CancellationToken token)
         {
             if (string.IsNullOrEmpty(solutionDirectory))
@@ -430,6 +467,8 @@ namespace NuGet.PackageManagement.VisualStudio
 
             var packages = (await _packageRestoreManager.GetPackagesInSolutionAsync(
                 solutionDirectory, token)).ToList();
+
+            packages.AddRange(_packageRestoreManager.GetPackagesRestoreData(solutionDirectory, packageReferencesDict));
 
             if (IsConsentGranted(_settings))
             {

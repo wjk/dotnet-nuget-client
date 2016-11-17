@@ -32,6 +32,7 @@ namespace NuGet.PackageManagement.VisualStudio
         private EnvDTE.SolutionEvents _solutionEvents;
         private readonly IVsSolutionManager _solutionManager;
         private readonly Common.ILogger _logger;
+        private readonly IDeferredProjectWorkspaceService _deferredWorkspaceService;
 
         private CancellationTokenSource _workerCts;
         private Lazy<Task> _backgroundJobRunner;
@@ -57,7 +58,8 @@ namespace NuGet.PackageManagement.VisualStudio
             IServiceProvider serviceProvider,
             IVsSolutionManager solutionManager,
             [Import(typeof(VisualStudioActivityLogger))]
-            Common.ILogger logger)
+            Common.ILogger logger,
+            IDeferredProjectWorkspaceService deferredWorkspaceService)
         {
             if (serviceProvider == null)
             {
@@ -74,9 +76,15 @@ namespace NuGet.PackageManagement.VisualStudio
                 throw new ArgumentNullException(nameof(logger));
             }
 
+            if (deferredWorkspaceService == null)
+            {
+                throw new ArgumentNullException(nameof(deferredWorkspaceService));
+            }
+
             _serviceProvider = serviceProvider;
             _solutionManager = solutionManager;
             _logger = logger;
+            _deferredWorkspaceService = deferredWorkspaceService;
 
             var joinableTaskContextNode = new JoinableTaskContextNode(ThreadHelper.JoinableTaskContext);
             _joinableCollection = joinableTaskContextNode.CreateCollection();
@@ -346,7 +354,7 @@ namespace NuGet.PackageManagement.VisualStudio
             using (var logger = await RestoreOperationLogger.StartAsync(
                 _serviceProvider, ErrorListProvider, blockingUi, jobCts))
             using (var job = await SolutionRestoreJob.CreateAsync(
-                _serviceProvider, logger, jobCts.Token))
+                _serviceProvider, _deferredWorkspaceService, logger, jobCts.Token))
             {
                 return await job.ExecuteAsync(jobArgs, _restoreJobContext, jobCts.Token);
             }

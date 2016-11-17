@@ -1,4 +1,7 @@
-﻿using System;
+﻿// Copyright (c) .NET Foundation. All rights reserved.
+// Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
+
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -6,6 +9,7 @@ using System.Linq;
 using System.Reflection;
 using System.Threading.Tasks;
 using NuGet.Frameworks;
+using NuGet.PackageManagement;
 using NuGet.Packaging.Core;
 using NuGet.ProjectManagement;
 
@@ -49,7 +53,7 @@ namespace NuGet.Common
             {
                 // this is required to get the right TFM for native or js projects since TargetFrameworkMoniker
                 // property won't give the accurate value for these kind of projects
-                var moniker = GetTargetFrameworkString();
+                var moniker = MSBuildProjectUtility.GetTargetFrameworkString(Project);
 
                 if (String.IsNullOrEmpty(moniker))
                 {
@@ -64,43 +68,6 @@ namespace NuGet.Common
         }
 
         private dynamic Project { get; }
-
-        private string GetTargetFrameworkString()
-        {
-            var extension = GetPropertyValue(ProjectManagement.Constants.ProjectExt);
-
-            // Check for JS project
-            if (StringComparer.OrdinalIgnoreCase.Equals(ProjectManagement.Constants.JSProjectExt, extension))
-            {
-                // JavaScript apps do not have a TargetFrameworkMoniker property set.
-                // We read the TargetPlatformIdentifier and TargetPlatformVersion instead
-                var platformIdentifier = GetPropertyValue(ProjectManagement.Constants.TargetPlatformIdentifier);
-                var platformVersion = GetPropertyValue(ProjectManagement.Constants.TargetPlatformVersion);
-
-                // use the default values for JS if they were not given
-                if (string.IsNullOrEmpty(platformVersion))
-                {
-                    platformVersion = "0.0";
-                }
-
-                if (string.IsNullOrEmpty(platformIdentifier))
-                {
-                    platformIdentifier = "Windows";
-                }
-
-                return string.Format(CultureInfo.InvariantCulture, "{0}, Version={1}", platformIdentifier, platformVersion);
-            }
-
-            // Check for C++ project
-            if (StringComparer.OrdinalIgnoreCase.Equals(ProjectManagement.Constants.VCXProjextExt, extension))
-            {
-                // The C++ project does not have a TargetFrameworkMoniker property set. 
-                // We hard-code the return value to Native.
-                return ProjectManagement.Constants.NativeTFM;
-            }
-
-            return GetPropertyValue(ProjectManagement.Constants.TargetFrameworkMoniker);
-        }
 
         public void AddBindingRedirects()
         {

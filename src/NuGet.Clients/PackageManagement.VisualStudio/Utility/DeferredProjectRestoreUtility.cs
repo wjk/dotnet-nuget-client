@@ -75,7 +75,8 @@ namespace NuGet.PackageManagement.VisualStudio
                     }
                     else
                     {
-                        // TODO: package references (CPS or Legacy CSProj)
+                        // TODO: https://github.com/NuGet/Home/issues/4003
+                        // package references (CPS or Legacy CSProj)
                         /*var packageRefsDict = await deferredWorkspaceService.GetPackageReferencesAsync(projectPath, token);
 
                         if (packageRefsDict.Count > 0)
@@ -87,7 +88,7 @@ namespace NuGet.PackageManagement.VisualStudio
                 }
 
             }
-
+            
             return new DeferredProjectRestoreData(packageReferencesDict, packageSpecs);
         }
 

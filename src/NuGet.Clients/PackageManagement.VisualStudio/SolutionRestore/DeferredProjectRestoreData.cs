@@ -12,14 +12,16 @@ namespace NuGet.PackageManagement.VisualStudio
     /// </summary>
     public sealed class DeferredProjectRestoreData
     {
-        public DeferredProjectRestoreData(Dictionary<PackageReference, List<string>> packageReferenceDict, List<PackageSpec> packageSpecs)
+        public DeferredProjectRestoreData(
+            IReadOnlyDictionary<PackageReference, List<string>> packageReferenceDict,
+            IReadOnlyList<PackageSpec> packageSpecs)
         {
             PackageReferenceDict = packageReferenceDict;
             PackageSpecs = packageSpecs;
         }
 
-        public Dictionary<PackageReference, List<string>> PackageReferenceDict { get; }
+        public IReadOnlyDictionary<PackageReference, List<string>> PackageReferenceDict { get; }
 
-        public List<PackageSpec> PackageSpecs { get; }
+        public IReadOnlyList<PackageSpec> PackageSpecs { get; }
     }
 }

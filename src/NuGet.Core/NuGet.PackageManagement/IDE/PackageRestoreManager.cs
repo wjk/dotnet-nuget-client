@@ -117,7 +117,14 @@ namespace NuGet.PackageManagement
             return GetPackagesRestoreData(solutionDirectory, packageReferencesDictionary);
         }
 
-	public IEnumerable<PackageRestoreData> GetPackagesRestoreData(string solutionDirectory, Dictionary<PackageReference, List<string>> packageReferencesDict)
+        /// <summary>
+        /// Get packages restore data for given package references.
+        /// </summary>
+        /// <param name="solutionDirectory">Current solution directory</param>
+        /// <param name="packageReferencesDict">Dictionary of package reference with project names</param>
+        /// <returns>List of packages restore data with missing package details.</returns>
+	    public IEnumerable<PackageRestoreData> GetPackagesRestoreData(string solutionDirectory,
+        Dictionary<PackageReference, List<string>> packageReferencesDict)
         {
             var packages = new List<PackageRestoreData>();
 

@@ -9,13 +9,10 @@ using System.Threading.Tasks;
 
 namespace NuGet.PackageManagement.VisualStudio
 {
-    [Guid("113bc32d-986a-4ef4-b5d8-f1e3da44c0f8")]
     public interface IDeferredProjectWorkspaceService
     {
         Task<bool> EntityExists(string filePath);
 
         Task<IEnumerable<string>> GetProjectReferencesAsync(string projectFilePath);
-
-        Task<IReadOnlyDictionary<string, string>> GetPackageReferencesAsync(string projectFilePath, CancellationToken cancellationToken);
     }
 }

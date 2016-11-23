@@ -23,9 +23,6 @@ namespace NuGet.PackageManagement.VisualStudio
 
         private IVsSolutionWorkspaceService SolutionWorkspaceService => ThreadHelper.JoinableTaskFactory.Run(_solutionWorkspaceService.GetValueAsync);
 
-        private IVsSolutionWorkspaceNugetService SolutionWorkspaceNuGetService =>
-            (IVsSolutionWorkspaceNugetService)SolutionWorkspaceService.GetService(typeof(IVsSolutionWorkspaceNugetService));
-
         [ImportingConstructor]
         public DeferredProjectWorkspaceService(
             [Import(typeof(SVsServiceProvider))]
@@ -57,13 +54,6 @@ namespace NuGet.PackageManagement.VisualStudio
             var indexService = workspace.GetIndexWorkspaceService();
             var fileReferenceResult = await indexService.GetFileReferencesAsync(projectFilePath, referenceTypes: (int)FileReferenceInfoType.ProjectReference);
             return fileReferenceResult.Select(f => workspace.MakeRooted(f.Path));
-        }
-
-        public async Task<IReadOnlyDictionary<string, string>> GetPackageReferencesAsync(string projectFilePath, CancellationToken cancellationToken)
-        {
-            var packageReferences = await SolutionWorkspaceNuGetService.GetPackageReferenceDataAsync(projectFilePath, cancellationToken);
-
-            return packageReferences.ToDictionary(package => package.Name, package => package.Version);
         }
     }
 }

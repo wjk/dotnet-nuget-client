@@ -389,6 +389,13 @@ namespace NuGet.CommandLine
                 }
             }
 
+            if (!installedToolsets.Any())
+            {
+                throw new CommandLineException(
+                    LocalizedResourceManager.GetString(
+                        nameof(NuGetResources.Error_CannotFindMsbuild)));
+            }
+
             msBuildDirectory = GetMsBuildDirectoryInternal(userVersion, console, installedToolsets, () => GetMsBuildPathInPathVar());
             Directory.SetCurrentDirectory(currentDirectoryCache);
             return msBuildDirectory;
@@ -436,20 +443,16 @@ namespace NuGet.CommandLine
         /// <returns>ProjectCollection instance to use for toolset enumeration</returns>
         private static IDisposable LoadProjectCollection()
         {
-            IDisposable projectCollection = null;
-
             try
             {
                 var msBuildTypesAssembly = Assembly.Load("Microsoft.Build, Version=14.0.0.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a");
                 Type projectCollectionType = msBuildTypesAssembly.GetType("Microsoft.Build.Evaluation.ProjectCollection", throwOnError: true);
-                projectCollection = Activator.CreateInstance(projectCollectionType) as IDisposable;
+                return Activator.CreateInstance(projectCollectionType) as IDisposable;
             }
-            catch(Exception e)
+            catch(Exception)
             {
-                throw new CommandLineException(LocalizedResourceManager.GetString(nameof(NuGetResources.MsbuildLoadToolSetError)), e);
+                return null;
             }
-
-            return projectCollection;
         }
 
         /// <summary>

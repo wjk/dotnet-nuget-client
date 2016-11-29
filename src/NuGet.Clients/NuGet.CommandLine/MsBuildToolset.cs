@@ -5,9 +5,9 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using System.Runtime.InteropServices.ComTypes;
 using Microsoft.VisualStudio.Setup.Configuration;
+using SysPath = System.IO.Path;
 
 namespace NuGet.CommandLine
 {
@@ -16,9 +16,8 @@ namespace NuGet.CommandLine
     /// ISetupInstance in the new (with MSBuild v15.1) installation story. Allows all discovered installations
     /// to be contained in the same collection.
     /// </summary>
-    public class MsBuildToolset: IComparable
+    public class MsBuildToolset: IComparable<MsBuildToolset>
     {
-        private readonly DateTime _installDate = DateTime.MinValue;
         private Version _parsedToolsVersion;
 
         /// <summary>
@@ -37,7 +36,7 @@ namespace NuGet.CommandLine
         {
             Path = GetMsBuildDirFromVsDir(sxsToolset.GetInstallationPath());
             Version = GetMsBuildVersionFromMsBuildDir(Path);
-            _installDate = ConvertFILETIMEToDateTime(sxsToolset.GetInstallDate());
+            InstallDate = ConvertFILETIMEToDateTime(sxsToolset.GetInstallDate());
         }
 
         /// <summary>
@@ -47,7 +46,7 @@ namespace NuGet.CommandLine
         {
             Version = version;
             Path = path;
-            _installDate = installDate;
+            InstallDate = installDate;
         }
 
         public Version ParsedVersion
@@ -70,46 +69,24 @@ namespace NuGet.CommandLine
 
         public string Path { get; private set; }
 
-        public int CompareTo(object obj)
+        public DateTime InstallDate { get; private set; } = DateTime.MinValue;
+
+        public int CompareTo(MsBuildToolset rhs)
         {
-            if (Object.ReferenceEquals(obj, null))
+            if (Object.ReferenceEquals(rhs, null))
             {
                 return 1;
             }
 
-            var rhs = obj as MsBuildToolset;
-            if (obj == null)
-            {
-                throw new ArgumentException("Comparison object not of correct type");
-            }
-
             // Compare versions
-            var comparison = this.ParsedVersion.Major.CompareTo(rhs.ParsedVersion.Major);
-            if (comparison != 0)
-            {
-                return comparison;
-            }
-
-            comparison = this.ParsedVersion.Minor.CompareTo(rhs.ParsedVersion.Minor);
-            if (comparison != 0)
-            {
-                return comparison;
-            }
-
-            comparison = this.ParsedVersion.Build.CompareTo(rhs.ParsedVersion.Build);
-            if (comparison != 0)
-            {
-                return comparison;
-            }
-
-            comparison = this.ParsedVersion.Revision.CompareTo(rhs.ParsedVersion.Revision);
+            var comparison = this.ParsedVersion.CompareTo(rhs.ParsedVersion);
             if (comparison != 0)
             {
                 return comparison;
             }
 
             // Versions equal; compare by install date/time
-            return this._installDate > rhs._installDate ? 1 : -1;
+            return this.InstallDate.CompareTo(rhs.InstallDate);
         }
 
         private static DateTime ConvertFILETIMEToDateTime(FILETIME time)
@@ -126,7 +103,7 @@ namespace NuGet.CommandLine
                 return null;
             }
 
-            string msBuildRoot = System.IO.Path.Combine(vsDir, "MSBuild");
+            string msBuildRoot = SysPath.Combine(vsDir, "MSBuild");
             if (!Directory.Exists(msBuildRoot))
             {
                 return null;
@@ -134,24 +111,27 @@ namespace NuGet.CommandLine
 
             // Enumerate all versions of MSBuild present, take the highest
             string msBuildDirectory = string.Empty;
-            var highestVersionRoot = Directory.EnumerateDirectories(msBuildRoot).OrderByDescending(dir =>
-            {
-                var dirName = new DirectoryInfo(dir).Name;
-                float dirValue;
-                if (float.TryParse(dirName, out dirValue))
+            var highestVersionRoot = Directory.EnumerateDirectories(msBuildRoot)
+                .OrderByDescending(ToFloatValue)
+                .FirstOrDefault(dir =>
                 {
-                    return dirValue;
-                }
-
-                return 0F;
-            })
-            .FirstOrDefault(dir =>
-            {
-                msBuildDirectory = System.IO.Path.Combine(dir, "bin");
-                return File.Exists(System.IO.Path.Combine(msBuildDirectory, "msbuild.exe"));
-            });
+                    msBuildDirectory = SysPath.Combine(dir, "bin");
+                    return File.Exists(SysPath.Combine(msBuildDirectory, "msbuild.exe"));
+                });
 
             return msBuildDirectory;
+        }
+
+        private static float ToFloatValue(string directoryName)
+        {
+            var dirName = new DirectoryInfo(directoryName).Name;
+            float dirValue;
+            if (float.TryParse(dirName, out dirValue))
+            {
+                return dirValue;
+            }
+
+            return 0F;
         }
 
         private static string GetMsBuildVersionFromMsBuildDir(string msBuildDir)
@@ -161,7 +141,7 @@ namespace NuGet.CommandLine
                 return null;
             }
 
-            var msBuildPath = System.IO.Path.Combine(msBuildDir, "msbuild.exe");
+            var msBuildPath = SysPath.Combine(msBuildDir, "msbuild.exe");
             if (!File.Exists(msBuildPath))
             {
                 return null;

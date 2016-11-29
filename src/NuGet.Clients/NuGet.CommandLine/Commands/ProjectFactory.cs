@@ -95,33 +95,19 @@ namespace NuGet.CommandLine
                 return null;
             }
 
-            var failingAssemblyFilename = args.Name.Substring(0, args.Name.IndexOf(","));
+            var failingAssemblyFilename = args.Name.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
 
             // If we're failing to load a resource assembly, we need to find it in the appropriate subdir
-            if (failingAssemblyFilename.Length > 10 &&
-                failingAssemblyFilename.Substring(failingAssemblyFilename.Length - 10, 10).Equals(".resources", StringComparison.OrdinalIgnoreCase))
+            if (failingAssemblyFilename.EndsWith(".resources", StringComparison.OrdinalIgnoreCase))
             {
-                var fallBackToEnglish = false;
-                var cultureName = CultureInfo.CurrentCulture?.TwoLetterISOLanguageName;
-                if (string.IsNullOrEmpty(cultureName))
-                {
-                    fallBackToEnglish = true;
-                }
+                var resourceDir = new[] {
+                    Path.Combine(_msbuildDirectory, CultureInfo.CurrentCulture.TwoLetterISOLanguageName),
+                    Path.Combine(_msbuildDirectory, "en") }
+                    .FirstOrDefault(d => Directory.Exists(d));
 
-                var resourceDir = Path.Combine(_msbuildDirectory, cultureName);
-                if (!Directory.Exists(resourceDir))
+                if (resourceDir == null)
                 {
-                    fallBackToEnglish = true;
-                }
-
-                if (fallBackToEnglish)
-                {
-                    resourceDir = Path.Combine(_msbuildDirectory, "en");
-                }
-
-                if (!Directory.Exists(resourceDir))
-                {
-                    return null; // no resource directory or fallback resource directory - fail
+                    return null; // no resource directory or fallback-to-en resource directory - fail
                 }
 
                 return Assembly.LoadFrom(Path.Combine(resourceDir, failingAssemblyFilename + ".dll"));

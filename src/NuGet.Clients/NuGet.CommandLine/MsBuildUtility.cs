@@ -371,7 +371,7 @@ namespace NuGet.CommandLine
                         installedToolsets.Add(new MsBuildToolset(version: item.ToolsVersion, path: item.ToolsPath));
                     }
 
-                    installedToolsets = installedToolsets.OrderByDescending(t => t).ToList();
+                    installedToolsets = installedToolsets.ToList();
                 }
             }
 
@@ -396,7 +396,8 @@ namespace NuGet.CommandLine
                         nameof(NuGetResources.Error_CannotFindMsbuild)));
             }
 
-            msBuildDirectory = GetMsBuildDirectoryInternal(userVersion, console, installedToolsets, () => GetMsBuildPathInPathVar());
+            msBuildDirectory = GetMsBuildDirectoryInternal(
+                userVersion, console, installedToolsets.OrderByDescending(t => t), () => GetMsBuildPathInPathVar());
             Directory.SetCurrentDirectory(currentDirectoryCache);
             return msBuildDirectory;
         }
@@ -538,7 +539,7 @@ namespace NuGet.CommandLine
             if (string.IsNullOrEmpty(msBuildPath))
             {
                 // We have no path for a specifically requested msbuild. Use the highest installed version.
-                selectedToolset = installedToolsets.OrderByDescending(t => t).FirstOrDefault();
+                selectedToolset = installedToolsets.FirstOrDefault();
             }
             else
             {
@@ -547,13 +548,13 @@ namespace NuGet.CommandLine
                 //     c:\Program Files (x86)\MSBuild\14.0\Bin
                 // is specified in the path (a path which we have validated contains an msbuild.exe) and the toolset is located at 
                 //     c:\Program Files (x86)\MSBuild\14.0\Bin\amd64
-                selectedToolset = installedToolsets.OrderByDescending(t => t).FirstOrDefault(
+                selectedToolset = installedToolsets.FirstOrDefault(
                     t => t.Path.StartsWith(msBuildPath, StringComparison.OrdinalIgnoreCase));
 
                 if (selectedToolset == null)
                 {
                     // No match. Fail silently. Use the highest installed version in this case
-                    selectedToolset = installedToolsets.OrderByDescending(t => t).FirstOrDefault();
+                    selectedToolset = installedToolsets.FirstOrDefault();
                 }
             }
 
@@ -580,17 +581,19 @@ namespace NuGet.CommandLine
                 userVersionString = adjustedVersion.ToString("F1");
             }
 
-            var selectedToolset = installedToolsets.OrderByDescending(t => t).FirstOrDefault(
-            t =>
-            {
-                // First match by string comparison
-                if (string.Equals(userVersionString, t.Version, StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
+            // First match by string comparison
+            var selectedToolset = installedToolsets.FirstOrDefault(
+                t => string.Equals(userVersionString, t.Version, StringComparison.OrdinalIgnoreCase));
 
-                // Then match by Major & Minor version numbers. And we want an actual parsing of t.ToolsVersion,
-                // without the safe fallback to 0.0 built into t.ParsedToolsVersion.
+            if (selectedToolset != null)
+            {
+                return selectedToolset;
+            }
+
+            // Then match by Major & Minor version numbers. And we want an actual parsing of t.ToolsVersion,
+            // without the safe fallback to 0.0 built into t.ParsedToolsVersion.
+            selectedToolset = installedToolsets.FirstOrDefault(t =>
+            {
                 Version parsedUserVersion;
                 Version parsedToolsVersion;
                 if (Version.TryParse(userVersionString, out parsedUserVersion) &&

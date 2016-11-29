@@ -84,25 +84,7 @@ namespace NuGet.CommandLine
             }
 
             // Compare versions
-            var comparison = this.ParsedVersion.Major.CompareTo(rhs.ParsedVersion.Major);
-            if (comparison != 0)
-            {
-                return comparison;
-            }
-
-            comparison = this.ParsedVersion.Minor.CompareTo(rhs.ParsedVersion.Minor);
-            if (comparison != 0)
-            {
-                return comparison;
-            }
-
-            comparison = this.ParsedVersion.Build.CompareTo(rhs.ParsedVersion.Build);
-            if (comparison != 0)
-            {
-                return comparison;
-            }
-
-            comparison = this.ParsedVersion.Revision.CompareTo(rhs.ParsedVersion.Revision);
+            var comparison = this.ParsedVersion.CompareTo(rhs.ParsedVersion);
             if (comparison != 0)
             {
                 return comparison;

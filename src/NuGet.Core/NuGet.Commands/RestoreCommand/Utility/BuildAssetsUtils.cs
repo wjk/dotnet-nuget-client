@@ -41,26 +41,24 @@ namespace NuGet.Commands
         /// Write XML to disk.
         /// Delete files which do not have new XML.
         /// </summary>
-        public static void WriteFiles(IList<KeyValuePair<FileInfo, XDocument>> files, ILogger log)
+        public static void WriteFiles(IReadOnlyList<MSBuildOutputFile> files, ILogger log)
         {
-            foreach (var pair in files)
+            foreach (var file in files)
             {
-                var path = pair.Key.FullName;
-
-                if (pair.Value == null)
+                if (file.Content == null)
                 {
                     // Remove the file if the XML is null
-                    FileUtility.Delete(path);
+                    FileUtility.Delete(file.Path);
                 }
                 else
                 {
-                    log.LogMinimal(string.Format(CultureInfo.CurrentCulture, Strings.Log_GeneratingMsBuildFile, path));
+                    log.LogMinimal(string.Format(CultureInfo.CurrentCulture, Strings.Log_GeneratingMsBuildFile, file.Path));
 
                     // Create the directory if it doesn't exist
-                    pair.Key.Directory.Create();
+                    Directory.CreateDirectory(Path.GetDirectoryName(file.Path));
 
                     // Write out XML file
-                    WriteXML(path, pair.Value);
+                    WriteXML(file.Path, file.Content);
                 }
             }
         }
@@ -69,7 +67,7 @@ namespace NuGet.Commands
         /// Create MSBuild targets and props files.
         /// Null will be returned for files that should be removed.
         /// </summary>
-        public static IList<KeyValuePair<FileInfo, XDocument>> GenerateMultiTargetFailureFiles(
+        public static IReadOnlyList<MSBuildOutputFile> GenerateMultiTargetFailureFiles(
             string targetsPath,
             string propsPath,
             string repositoryRoot,
@@ -89,10 +87,10 @@ namespace NuGet.Commands
                 propsXML = GenerateEmptyImportsFile(repositoryRoot, restoreType, success);
             }
 
-            return new List<KeyValuePair<FileInfo, XDocument>>()
+            return new List<MSBuildOutputFile>()
             {
-                new KeyValuePair<FileInfo, XDocument>(new FileInfo(targetsPath), targetsXML),
-                new KeyValuePair<FileInfo, XDocument>(new FileInfo(propsPath), propsXML),
+                new MSBuildOutputFile(targetsPath, targetsXML),
+                new MSBuildOutputFile(propsPath, propsXML),
             };
         }
 
@@ -100,7 +98,7 @@ namespace NuGet.Commands
         /// Create MSBuild targets and props files.
         /// Null will be returned for files that should be removed.
         /// </summary>
-        public static IList<KeyValuePair<FileInfo, XDocument>> GenerateFiles(
+        public static IReadOnlyList<MSBuildOutputFile> GenerateFiles(
             string targetsPath,
             string propsPath,
             IList<MSBuildRestoreImportGroup> targets,
@@ -127,10 +125,10 @@ namespace NuGet.Commands
                 propsXML = GenerateImportsFile(props, repositoryRoot, restoreType, success);
             }
 
-            return new List<KeyValuePair<FileInfo, XDocument>>()
+            return new List<MSBuildOutputFile>()
             {
-                new KeyValuePair<FileInfo, XDocument>(new FileInfo(targetsPath), targetsXML),
-                new KeyValuePair<FileInfo, XDocument>(new FileInfo(propsPath), propsXML),
+                new MSBuildOutputFile(targetsPath, targetsXML),
+                new MSBuildOutputFile(propsPath, propsXML),
             };
         }
 

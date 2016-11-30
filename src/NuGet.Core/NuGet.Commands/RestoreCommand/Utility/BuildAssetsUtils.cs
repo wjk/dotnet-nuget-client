@@ -7,7 +7,10 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using System.Xml.Linq;
 using NuGet.Client;
+using NuGet.Common;
 using NuGet.ContentModel;
 using NuGet.DependencyResolver;
 using NuGet.Frameworks;
@@ -25,6 +28,284 @@ namespace NuGet.Commands
         internal static readonly string CrossTargetingCondition = "'$(TargetFramework)' == ''";
         internal static readonly string TargetFrameworkCondition = "'$(TargetFramework)' == '{0}'";
         internal static readonly string ExcludeAllCondition = "'$(ExcludeRestorePackageImports)' != 'true'";
+
+        /// <summary>
+        /// The macros that we may use in MSBuild to replace path roots.
+        /// </summary>
+        public static readonly string[] MacroCandidates = new[]
+        {
+            "UserProfile", // e.g. C:\users\myusername
+        };
+
+        /// <summary>
+        /// Write XML to disk.
+        /// Delete files which do not have new XML.
+        /// </summary>
+        public static void WriteFiles(IList<KeyValuePair<FileInfo, XDocument>> files, ILogger log)
+        {
+            foreach (var pair in files)
+            {
+                var path = pair.Key.FullName;
+
+                if (pair.Value == null)
+                {
+                    // Remove the file if the XML is null
+                    FileUtility.Delete(path);
+                }
+                else
+                {
+                    log.LogMinimal(string.Format(CultureInfo.CurrentCulture, Strings.Log_GeneratingMsBuildFile, path));
+
+                    // Create the directory if it doesn't exist
+                    pair.Key.Directory.Create();
+
+                    // Write out XML file
+                    WriteXML(path, pair.Value);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Create MSBuild targets and props files.
+        /// Null will be returned for files that should be removed.
+        /// </summary>
+        public static IList<KeyValuePair<FileInfo, XDocument>> GenerateMultiTargetFailureFiles(
+            string targetsPath,
+            string propsPath,
+            string repositoryRoot,
+            bool success,
+            RestoreOutputType restoreType,
+            ILogger log,
+            CancellationToken token)
+        {
+            XDocument targetsXML = null;
+            XDocument propsXML = null;
+
+            // Create an error file for MSBuild to stop the build.
+            targetsXML = GenerateMultiTargetFrameworkWarning(repositoryRoot, restoreType, success);
+
+            if (restoreType == RestoreOutputType.NETCore)
+            {
+                propsXML = GenerateEmptyImportsFile(repositoryRoot, restoreType, success);
+            }
+
+            return new List<KeyValuePair<FileInfo, XDocument>>()
+            {
+                new KeyValuePair<FileInfo, XDocument>(new FileInfo(targetsPath), targetsXML),
+                new KeyValuePair<FileInfo, XDocument>(new FileInfo(propsPath), propsXML),
+            };
+        }
+
+        /// <summary>
+        /// Create MSBuild targets and props files.
+        /// Null will be returned for files that should be removed.
+        /// </summary>
+        public static IList<KeyValuePair<FileInfo, XDocument>> GenerateFiles(
+            string targetsPath,
+            string propsPath,
+            IList<MSBuildRestoreImportGroup> targets,
+            IList<MSBuildRestoreImportGroup> props,
+            string repositoryRoot,
+            bool success,
+            RestoreOutputType restoreType,
+            ILogger log)
+        {
+            XDocument targetsXML = null;
+            XDocument propsXML = null;
+
+            // Generate the files as needed for project.json
+            // Always generate for NETCore
+            if (restoreType == RestoreOutputType.NETCore
+                || targets.Any(group => group.Imports.Count > 0))
+            {
+                targetsXML = GenerateImportsFile(targets, repositoryRoot, restoreType, success);
+            }
+
+            if (restoreType == RestoreOutputType.NETCore
+                || props.Any(group => group.Imports.Count > 0))
+            {
+                propsXML = GenerateImportsFile(props, repositoryRoot, restoreType, success);
+            }
+
+            return new List<KeyValuePair<FileInfo, XDocument>>()
+            {
+                new KeyValuePair<FileInfo, XDocument>(new FileInfo(targetsPath), targetsXML),
+                new KeyValuePair<FileInfo, XDocument>(new FileInfo(propsPath), propsXML),
+            };
+        }
+
+        public static string ReplacePathsWithMacros(string path)
+        {
+            foreach (var macroName in MacroCandidates)
+            {
+                string macroValue = Environment.GetEnvironmentVariable(macroName);
+                if (!string.IsNullOrEmpty(macroValue)
+                    && path.StartsWith(macroValue, StringComparison.OrdinalIgnoreCase))
+                {
+                    path = $"$({macroName})" + $"{path.Substring(macroValue.Length)}";
+                }
+
+                break;
+            }
+
+            return path;
+        }
+
+        public static XDocument GenerateMultiTargetFrameworkWarning(string repositoryRoot, RestoreOutputType outputType, bool success)
+        {
+            var doc = GenerateEmptyImportsFile(repositoryRoot, outputType, success);
+            var ns = doc.Root.GetDefaultNamespace();
+
+            doc.Root.Add(new XElement(ns + "Target",
+                        new XAttribute("Name", "EmitMSBuildWarning"),
+                        new XAttribute("BeforeTargets", "Build"),
+
+                        new XElement(ns + "Warning",
+                            new XAttribute("Text", Strings.MSBuildWarning_MultiTarget))));
+
+            return doc;
+        }
+
+        /// <summary>
+        /// Get empty file with the base properties.
+        /// </summary>
+        public static XDocument GenerateEmptyImportsFile(string repositoryRoot, RestoreOutputType outputType, bool success)
+        {
+            var projectStyle = "Unknown";
+
+            if (outputType == RestoreOutputType.NETCore)
+            {
+                projectStyle = "PackageReference";
+            }
+            else if (outputType == RestoreOutputType.UAP)
+            {
+                projectStyle = "ProjectJson";
+            }
+
+            var ns = XNamespace.Get("http://schemas.microsoft.com/developer/msbuild/2003");
+            var doc = new XDocument(
+                new XDeclaration("1.0", "utf-8", "no"),
+
+                new XElement(ns + "Project",
+                    new XAttribute("ToolsVersion", "14.0"),
+
+                    new XElement(ns + "PropertyGroup",
+                        GetProperty(ns, "NuGetPackageRoot", ReplacePathsWithMacros(repositoryRoot)),
+                        GetProperty(ns, "NuGetProjectStyle", projectStyle),
+                        GetProperty(ns, "NuGetToolVersion", MinClientVersionUtility.GetNuGetClientVersion().ToNormalizedString()),
+                        GetProperty(ns, "NuGetRestoreSuccess", success.ToString()))));
+
+            return doc;
+        }
+
+        public static XElement GetProperty(XNamespace ns, string propertyName, string content)
+        {
+            return new XElement(ns + propertyName,
+                            new XAttribute("Condition", $" '$({propertyName})' == '' "),
+                            content);
+        }
+
+        public static XDocument GenerateImportsFile(IList<MSBuildRestoreImportGroup> groups,
+            string repositoryRoot,
+            RestoreOutputType outputType,
+            bool success)
+        {
+            var doc = GenerateEmptyImportsFile(repositoryRoot, outputType, success);
+            var ns = doc.Root.GetDefaultNamespace();
+
+            // Add import groups, order by position, then by the conditions to keep the results deterministic
+            // Skip empty groups
+            foreach (var group in groups
+                .Where(e => e.Imports.Count > 0)
+                .OrderBy(e => e.Position)
+                .ThenBy(e => e.Condition, StringComparer.OrdinalIgnoreCase))
+            {
+                var itemGroup = new XElement(ns + "ImportGroup", group.Imports.Select(i =>
+                            new XElement(ns + "Import",
+                                new XAttribute("Project", GetImportPath(i, repositoryRoot)),
+                                new XAttribute("Condition", $"Exists('{GetImportPath(i, repositoryRoot)}')"))));
+
+                // Add a conditional statement if multiple TFMs exist or cross targeting is present
+                var conditionValue = group.Condition;
+                if (!string.IsNullOrEmpty(conditionValue))
+                {
+                    itemGroup.Add(new XAttribute("Condition", conditionValue));
+                }
+
+                // Add itemgroup to file
+                doc.Root.Add(itemGroup);
+            }
+
+            return doc;
+        }
+
+        public static void WriteXML(string path, XDocument doc)
+        {
+            FileUtility.Replace((outputPath) =>
+            {
+                using (var output = new FileStream(outputPath, FileMode.Create, FileAccess.ReadWrite, FileShare.None))
+                {
+                    doc.Save(output);
+                }
+            },
+            path);
+        }
+
+        public static string GetImportPath(string importPath, string repositoryRoot)
+        {
+            var path = importPath;
+
+            if (importPath.StartsWith(repositoryRoot, StringComparison.Ordinal))
+            {
+                path = $"$(NuGetPackageRoot){importPath.Substring(repositoryRoot.Length)}";
+            }
+            else
+            {
+                path = ReplacePathsWithMacros(importPath);
+            }
+
+            return path;
+        }
+
+        /// <summary>
+        /// Check if the file has changes compared to the original on disk.
+        /// </summary>
+        public static bool HasChanges(XDocument newFile, string path, ILogger log)
+        {
+            XDocument existing = ReadExisting(path, log);
+
+            if (existing != null)
+            {
+                // Use a simple string compare to check if the files match
+                // This can be optimized in the future, but generally these are very small files.
+                return !newFile.ToString().Equals(existing.ToString(), StringComparison.Ordinal);
+            }
+
+            return true;
+        }
+
+        public static XDocument ReadExisting(string path, ILogger log)
+        {
+            XDocument result = null;
+
+            if (File.Exists(path))
+            {
+                try
+                {
+                    using (var output = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.None))
+                    {
+                        result = XDocument.Load(output);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    // Log a debug message and ignore, this will force an overwrite
+                    log.LogDebug($"Failed to open imports file: {path} Error: {ex.Message}");
+                }
+            }
+
+            return result;
+        }
 
         internal static MSBuildRestoreResult RestoreMSBuildFiles(PackageSpec project,
             IEnumerable<RestoreTargetGraph> targetGraphs,

@@ -17,8 +17,6 @@ namespace NuGet.Commands
     {
         public bool Success { get; }
 
-        public MSBuildRestoreResult MSBuild { get; }
-
         /// <summary>
         /// Gets the path that the lock file will be written to.
         /// </summary>
@@ -49,6 +47,21 @@ namespace NuGet.Commands
         /// </summary>
         public TimeSpan ElapsedTime { get; }
 
+        /// <summary>
+        /// MSBuild targets file path.
+        /// </summary>
+        public string TargetsPath { get; }
+
+        /// <summary>
+        /// MSBuild props file path.
+        /// </summary>
+        public string PropsPath { get; }
+
+        /// <summary>
+        /// Gets the root of the repository containing packages with MSBuild files
+        /// </summary>
+        public string RepositoryRoot { get; }
+
         public RestoreResult(
             bool success,
             IEnumerable<RestoreTargetGraph> restoreGraphs,
@@ -56,7 +69,6 @@ namespace NuGet.Commands
             LockFile lockFile,
             LockFile previousLockFile,
             string lockFilePath,
-            MSBuildRestoreResult msbuild,
             RestoreOutputType outputType,
             TimeSpan elapsedTime)
         {
@@ -65,7 +77,6 @@ namespace NuGet.Commands
             CompatibilityCheckResults = compatibilityCheckResults;
             LockFile = lockFile;
             LockFilePath = lockFilePath;
-            MSBuild = msbuild;
             PreviousLockFile = previousLockFile;
             OutputType = outputType;
             ElapsedTime = elapsedTime;

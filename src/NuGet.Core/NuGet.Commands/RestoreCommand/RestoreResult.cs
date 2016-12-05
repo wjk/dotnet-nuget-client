@@ -29,6 +29,14 @@ namespace NuGet.Commands
 
         public IEnumerable<CompatibilityCheckResult> CompatibilityCheckResults { get; }
 
+        /// <summary>
+        /// Props and targets files to be written to disk.
+        /// </summary>
+        public IEnumerable<MSBuildOutputFile> MSBuildOutputFiles { get; }
+
+        /// <summary>
+        /// Restore type.
+        /// </summary>
         public RestoreOutputType OutputType { get; }
 
         /// <summary>
@@ -47,25 +55,11 @@ namespace NuGet.Commands
         /// </summary>
         public TimeSpan ElapsedTime { get; }
 
-        /// <summary>
-        /// MSBuild targets file path.
-        /// </summary>
-        public string TargetsPath { get; }
-
-        /// <summary>
-        /// MSBuild props file path.
-        /// </summary>
-        public string PropsPath { get; }
-
-        /// <summary>
-        /// Gets the root of the repository containing packages with MSBuild files
-        /// </summary>
-        public string RepositoryRoot { get; }
-
         public RestoreResult(
             bool success,
             IEnumerable<RestoreTargetGraph> restoreGraphs,
             IEnumerable<CompatibilityCheckResult> compatibilityCheckResults,
+            IEnumerable<MSBuildOutputFile> msbuildFiles,
             LockFile lockFile,
             LockFile previousLockFile,
             string lockFilePath,
@@ -75,6 +69,7 @@ namespace NuGet.Commands
             Success = success;
             RestoreGraphs = restoreGraphs;
             CompatibilityCheckResults = compatibilityCheckResults;
+            MSBuildOutputFiles = msbuildFiles;
             LockFile = lockFile;
             LockFilePath = lockFilePath;
             PreviousLockFile = previousLockFile;
@@ -134,7 +129,7 @@ namespace NuGet.Commands
             // Commit targets/props to disk before the assets file.
             // Visual Studio typically watches the assets file for changes
             // and begins a reload when that file changes.
-            MSBuild.Commit(log);
+            BuildAssetsUtils.WriteFiles(MSBuildOutputFiles, log);
 
             // Commit the assets file to disk.
             await CommitAsync(

@@ -1,13 +1,13 @@
 ﻿// Copyright (c) .NET Foundation. All rights reserved.
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
-using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Xml.Linq;
 
 namespace NuGet.Commands
 {
-    public class MSBuildRestoreImportGroup
+    public class MSBuildRestoreItemGroup
     {
         /// <summary>
         /// Optional position arguement used when ordering groups in the output file.
@@ -20,9 +20,9 @@ namespace NuGet.Commands
         public List<string> Conditions { get; set; } = new List<string>();
 
         /// <summary>
-        /// Project paths to import.
+        /// Items or imports.
         /// </summary>
-        public List<string> Imports { get; set; } = new List<string>();
+        public List<XElement> Items { get; set; } = new List<XElement>();
 
         /// <summary>
         /// Combined conditions

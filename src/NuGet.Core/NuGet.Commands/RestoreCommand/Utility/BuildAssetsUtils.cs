@@ -25,6 +25,7 @@ namespace NuGet.Commands
 {
     public static class BuildAssetsUtils
     {
+        private static readonly XNamespace Namespace = XNamespace.Get("http://schemas.microsoft.com/developer/msbuild/2003");
         internal static readonly string CrossTargetingCondition = "'$(TargetFramework)' == ''";
         internal static readonly string TargetFrameworkCondition = "'$(TargetFramework)' == '{0}'";
         internal static readonly string ExcludeAllCondition = "'$(ExcludeRestorePackageImports)' != 'true'";
@@ -41,7 +42,7 @@ namespace NuGet.Commands
         /// Write XML to disk.
         /// Delete files which do not have new XML.
         /// </summary>
-        public static void WriteFiles(IReadOnlyList<MSBuildOutputFile> files, ILogger log)
+        public static void WriteFiles(IEnumerable<MSBuildOutputFile> files, ILogger log)
         {
             foreach (var file in files)
             {
@@ -67,7 +68,7 @@ namespace NuGet.Commands
         /// Create MSBuild targets and props files.
         /// Null will be returned for files that should be removed.
         /// </summary>
-        public static IReadOnlyList<MSBuildOutputFile> GenerateMultiTargetFailureFiles(
+        public static List<MSBuildOutputFile> GenerateMultiTargetFailureFiles(
             string targetsPath,
             string propsPath,
             string repositoryRoot,
@@ -101,8 +102,8 @@ namespace NuGet.Commands
         public static IReadOnlyList<MSBuildOutputFile> GenerateFiles(
             string targetsPath,
             string propsPath,
-            IList<MSBuildRestoreImportGroup> targets,
-            IList<MSBuildRestoreImportGroup> props,
+            List<MSBuildRestoreItemGroup> targets,
+            List<MSBuildRestoreItemGroup> props,
             string repositoryRoot,
             bool success,
             RestoreOutputType restoreType,
@@ -114,15 +115,15 @@ namespace NuGet.Commands
             // Generate the files as needed for project.json
             // Always generate for NETCore
             if (restoreType == RestoreOutputType.NETCore
-                || targets.Any(group => group.Imports.Count > 0))
+                || targets.Any(group => group.Items.Count > 0))
             {
-                targetsXML = GenerateImportsFile(targets, repositoryRoot, restoreType, success);
+                targetsXML = GenerateMSBuildFile(targets, repositoryRoot, restoreType, success);
             }
 
             if (restoreType == RestoreOutputType.NETCore
-                || props.Any(group => group.Imports.Count > 0))
+                || props.Any(group => group.Items.Count > 0))
             {
-                propsXML = GenerateImportsFile(props, repositoryRoot, restoreType, success);
+                propsXML = GenerateMSBuildFile(props, repositoryRoot, restoreType, success);
             }
 
             return new List<MSBuildOutputFile>()
@@ -188,50 +189,67 @@ namespace NuGet.Commands
                     new XAttribute("ToolsVersion", "14.0"),
 
                     new XElement(ns + "PropertyGroup",
-                        GetProperty(ns, "NuGetPackageRoot", ReplacePathsWithMacros(repositoryRoot)),
-                        GetProperty(ns, "NuGetProjectStyle", projectStyle),
-                        GetProperty(ns, "NuGetToolVersion", MinClientVersionUtility.GetNuGetClientVersion().ToNormalizedString()),
-                        GetProperty(ns, "NuGetRestoreSuccess", success.ToString()))));
+                        GetProperty("NuGetPackageRoot", ReplacePathsWithMacros(repositoryRoot)),
+                        GetProperty("NuGetProjectStyle", projectStyle),
+                        GetProperty("NuGetToolVersion", MinClientVersionUtility.GetNuGetClientVersion().ToNormalizedString()),
+                        GetProperty("NuGetRestoreSuccess", success.ToString()))));
 
             return doc;
         }
 
-        public static XElement GetProperty(XNamespace ns, string propertyName, string content)
+        public static XElement GetProperty(string propertyName, string content)
         {
-            return new XElement(ns + propertyName,
+            return new XElement(Namespace + propertyName,
                             new XAttribute("Condition", $" '$({propertyName})' == '' "),
                             content);
         }
 
-        public static XDocument GenerateImportsFile(IList<MSBuildRestoreImportGroup> groups,
+        public static XElement GenerateImport(string path)
+        {
+            return new XElement(Namespace + "Import",
+                                new XAttribute("Project", path),
+                                new XAttribute("Condition", $"Exists('{path}')"));
+        }
+
+        public static XElement GenerateContentFilesItem(string ns, string path)
+        {
+            throw new NotImplementedException();
+        }
+
+        /// <summary>
+        /// Returns null if the result should not exist on disk.
+        /// </summary>
+        public static XDocument GenerateMSBuildFile(List<MSBuildRestoreItemGroup> groups,
             string repositoryRoot,
             RestoreOutputType outputType,
             bool success)
         {
-            var doc = GenerateEmptyImportsFile(repositoryRoot, outputType, success);
-            var ns = doc.Root.GetDefaultNamespace();
+            XDocument doc = null;
 
-            // Add import groups, order by position, then by the conditions to keep the results deterministic
-            // Skip empty groups
-            foreach (var group in groups
-                .Where(e => e.Imports.Count > 0)
-                .OrderBy(e => e.Position)
-                .ThenBy(e => e.Condition, StringComparer.OrdinalIgnoreCase))
+            // Always write out netcore props/targets. For project.json only write the file if it has items.
+            if (outputType == RestoreOutputType.NETCore || groups.SelectMany(e => e.Items).Any())
             {
-                var itemGroup = new XElement(ns + "ImportGroup", group.Imports.Select(i =>
-                            new XElement(ns + "Import",
-                                new XAttribute("Project", GetImportPath(i, repositoryRoot)),
-                                new XAttribute("Condition", $"Exists('{GetImportPath(i, repositoryRoot)}')"))));
+                doc = GenerateEmptyImportsFile(repositoryRoot, outputType, success);
 
-                // Add a conditional statement if multiple TFMs exist or cross targeting is present
-                var conditionValue = group.Condition;
-                if (!string.IsNullOrEmpty(conditionValue))
+                // Add import groups, order by position, then by the conditions to keep the results deterministic
+                // Skip empty groups
+                foreach (var group in groups
+                    .Where(e => e.Items.Count > 0)
+                    .OrderBy(e => e.Position)
+                    .ThenBy(e => e.Condition, StringComparer.OrdinalIgnoreCase))
                 {
-                    itemGroup.Add(new XAttribute("Condition", conditionValue));
-                }
+                    var itemGroup = new XElement(Namespace + "ImportGroup", group.Items);
 
-                // Add itemgroup to file
-                doc.Root.Add(itemGroup);
+                    // Add a conditional statement if multiple TFMs exist or cross targeting is present
+                    var conditionValue = group.Condition;
+                    if (!string.IsNullOrEmpty(conditionValue))
+                    {
+                        itemGroup.Add(new XAttribute("Condition", conditionValue));
+                    }
+
+                    // Add itemgroup to file
+                    doc.Root.Add(itemGroup);
+                }
             }
 
             return doc;
@@ -305,13 +323,17 @@ namespace NuGet.Commands
             return result;
         }
 
-        internal static MSBuildRestoreResult RestoreMSBuildFiles(PackageSpec project,
+        public static List<MSBuildOutputFile> GetMSBuildOutputFiles(PackageSpec project,
             IEnumerable<RestoreTargetGraph> targetGraphs,
             IReadOnlyList<NuGetv3LocalRepository> repositories,
             RemoteWalkContext context,
             RestoreRequest request,
-            Dictionary<RestoreTargetGraph, Dictionary<string, LibraryIncludeFlags>> includeFlagGraphs)
+            Dictionary<RestoreTargetGraph, Dictionary<string, LibraryIncludeFlags>> includeFlagGraphs,
+            bool restoreSuccess,
+            ILogger log,
+            CancellationToken token)
         {
+            // Generate file names
             var targetsPath = Path.Combine(request.RestoreOutputPath, $"{project.Name}.nuget.targets");
             var propsPath = Path.Combine(request.RestoreOutputPath, $"{project.Name}.nuget.props");
 
@@ -323,19 +345,187 @@ namespace NuGet.Commands
                 propsPath = Path.Combine(request.RestoreOutputPath, $"{projFileName}.nuget.g.props");
             }
 
-            // Non-Msbuild projects should skip targets and treat it as success
-            if (!context.IsMsBuildBased && !ForceWriteTargets())
-            {
-                return new MSBuildRestoreResult(targetsPath, propsPath, success: true);
-            }
+            // Targets files contain a macro for the repository root. If only the user package folder was used
+            // allow a replacement. If fallback folders were used the macro cannot be applied.
+            // Do not use macros for fallback folders. Use only the first repository which is the user folder.
+            var repositoryRoot = repositories.First().RepositoryRoot;
 
             // Invalid msbuild projects should write out an msbuild error target
             if (!targetGraphs.Any())
             {
-                return new MSBuildRestoreResult(targetsPath, propsPath, success: false);
+                return GenerateMultiTargetFailureFiles(
+                    targetsPath,
+                    propsPath,
+                    repositoryRoot,
+                    restoreSuccess,
+                    request.RestoreOutputType,
+                    log,
+                    token);
             }
 
             // Framework -> (targets, props)
+            var buildAssetsByFramework = GetBuildAssetsByFramework(
+                project,
+                targetGraphs,
+                repositories,
+                context,
+                request,
+                includeFlagGraphs);
+
+            // Add targets and props files from packages.
+            var props = new List<MSBuildRestoreItemGroup>();
+            var targets = new List<MSBuildRestoreItemGroup>();
+
+            // Conditionals for targets and props are only supported by NETCore
+            if (project.RestoreMetadata?.OutputType == RestoreOutputType.NETCore)
+            {
+                // Populate targets and props for project.assets.json
+                AddNETCoreTargetsAndProps(
+                    project,
+                    targetGraphs,
+                    repositories,
+                    context,
+                    request,
+                    includeFlagGraphs,
+                    buildAssetsByFramework,
+                    props,
+                    targets);
+
+                // Get prop items for contentFiles
+                props.AddRange(GetMSBuildContentFilesGroups());
+            }
+            else
+            {
+                // Populate targets and props for project.lock.json
+                AddProjectJsonTargetsAndProps(buildAssetsByFramework, props, targets);
+            }
+
+            // Add exclude all condition to all groups
+            foreach (var group in props.Concat(targets))
+            {
+                group.Conditions.Add(ExcludeAllCondition);
+            }
+
+            // Create XML, these may be null if the file should be deleted/not written out.
+            var propsXML = GenerateMSBuildFile(props, repositoryRoot, request.RestoreOutputType, restoreSuccess);
+            var targetsXML = GenerateMSBuildFile(targets, repositoryRoot, request.RestoreOutputType, restoreSuccess);
+
+            // Return all files to write out or delete.
+            return new List<MSBuildOutputFile>
+            {
+                new MSBuildOutputFile(propsPath, propsXML),
+                new MSBuildOutputFile(targetsPath, targetsXML)
+            };
+        }
+        
+        public static List<MSBuildRestoreItemGroup> GetMSBuildContentFilesGroups()
+        {
+            throw new NotImplementedException();
+        }
+
+        private static void AddProjectJsonTargetsAndProps(
+            Dictionary<NuGetFramework, TargetsAndProps> buildAssetsByFramework,
+            List<MSBuildRestoreItemGroup> props,
+            List<MSBuildRestoreItemGroup> targets)
+        {
+            // Copy targets and props over, there can only be 1 tfm here
+            // No conditionals are added
+            var targetsAndProps = buildAssetsByFramework.First();
+
+            var propsGroup = new MSBuildRestoreItemGroup();
+            propsGroup.Items.AddRange(targetsAndProps.Value.Props.Select(GenerateImport));
+            props.Add(propsGroup);
+
+            var targetsGroup = new MSBuildRestoreItemGroup();
+            targetsGroup.Items.AddRange(targetsAndProps.Value.Targets.Select(GenerateImport));
+            targets.Add(targetsGroup);
+        }
+
+        private static void AddNETCoreTargetsAndProps(
+            PackageSpec project,
+            IEnumerable<RestoreTargetGraph> targetGraphs,
+            IReadOnlyList<NuGetv3LocalRepository> repositories,
+            RemoteWalkContext context,
+            RestoreRequest request,
+            Dictionary<RestoreTargetGraph, Dictionary<string, LibraryIncludeFlags>> includeFlagGraphs,
+            Dictionary<NuGetFramework,TargetsAndProps> buildAssetsByFramework,
+            List<MSBuildRestoreItemGroup> props,
+            List<MSBuildRestoreItemGroup> targets)
+        {
+            // Add additional conditionals for cross targeting
+            var isCrossTargeting = request.Project.RestoreMetadata.CrossTargeting
+                || request.Project.TargetFrameworks.Count > 1;
+
+            Debug.Assert((!request.Project.RestoreMetadata.CrossTargeting && (request.Project.TargetFrameworks.Count < 2)
+                || (request.Project.RestoreMetadata.CrossTargeting)),
+                "Invalid crosstargeting and framework count combination");
+
+            if (isCrossTargeting)
+            {
+                // Find all global targets from buildCrossTargeting
+                var crossTargetingAssets = GetTargetsAndPropsForCrossTargeting(
+                        targetGraphs,
+                        repositories,
+                        context,
+                        request,
+                        includeFlagGraphs);
+
+                var crossProps = new MSBuildRestoreItemGroup();
+                crossProps.Position = 0;
+                crossProps.Conditions.Add(CrossTargetingCondition);
+                crossProps.Items.AddRange(crossTargetingAssets.Props.Select(GenerateImport));
+                props.Add(crossProps);
+
+                var crossTargets = new MSBuildRestoreItemGroup();
+                crossTargets.Position = 0;
+                crossTargets.Conditions.Add(CrossTargetingCondition);
+                crossTargets.Items.AddRange(crossTargetingAssets.Targets.Select(GenerateImport));
+                targets.Add(crossTargets);
+            }
+
+            // Find TFM specific assets from the build folder
+            foreach (var pair in buildAssetsByFramework)
+            {
+                // There could be multiple string matches
+                foreach (var match in GetMatchingFrameworkStrings(project, pair.Key))
+                {
+                    var frameworkCondition = string.Format(CultureInfo.InvariantCulture, TargetFrameworkCondition, match);
+
+                    // Add entries regardless of if imports exist,
+                    // this is needed to trigger conditionals
+                    var propsGroup = new MSBuildRestoreItemGroup();
+
+                    if (isCrossTargeting)
+                    {
+                        propsGroup.Conditions.Add(frameworkCondition);
+                    }
+
+                    propsGroup.Items.AddRange(pair.Value.Props.Select(GenerateImport));
+                    propsGroup.Position = 1;
+                    props.Add(propsGroup);
+
+                    var targetsGroup = new MSBuildRestoreItemGroup();
+
+                    if (isCrossTargeting)
+                    {
+                        targetsGroup.Conditions.Add(frameworkCondition);
+                    }
+
+                    targetsGroup.Items.AddRange(pair.Value.Targets.Select(GenerateImport));
+                    targetsGroup.Position = 1;
+                    targets.Add(targetsGroup);
+                }
+            }
+        }
+
+        private static Dictionary<NuGetFramework, TargetsAndProps> GetBuildAssetsByFramework(
+            PackageSpec project,
+            IEnumerable<RestoreTargetGraph> targetGraphs,
+            IReadOnlyList<NuGetv3LocalRepository> repositories,
+            RemoteWalkContext context,
+            RestoreRequest request,
+            Dictionary<RestoreTargetGraph, Dictionary<string, LibraryIncludeFlags>> includeFlagGraphs)
+        {
             var buildAssetsByFramework = new Dictionary<NuGetFramework, TargetsAndProps>();
 
             // Get assets for each framework
@@ -353,110 +543,7 @@ namespace NuGet.Commands
                 buildAssetsByFramework.Add(projectFramework, targetsAndProps);
             }
 
-            var props = new List<MSBuildRestoreImportGroup>();
-            var targets = new List<MSBuildRestoreImportGroup>();
-
-            // Conditionals for targets and props are only supported by NETCore
-            if (project.RestoreMetadata?.OutputType == RestoreOutputType.NETCore)
-            {
-                // Add additional conditionals for cross targeting
-                var isCrossTargeting = request.Project.RestoreMetadata.CrossTargeting
-                    || request.Project.TargetFrameworks.Count > 1;
-
-                Debug.Assert((!request.Project.RestoreMetadata.CrossTargeting && (request.Project.TargetFrameworks.Count < 2)
-                    || (request.Project.RestoreMetadata.CrossTargeting)),
-                    "Invalid crosstargeting and framework count combination");
-
-                if (isCrossTargeting)
-                {
-                    // Find all global targets from buildCrossTargeting
-                    var crossTargetingAssets = GetTargetsAndPropsForCrossTargeting(
-                            targetGraphs,
-                            repositories,
-                            context,
-                            request,
-                            includeFlagGraphs);
-
-                    var crossProps = new MSBuildRestoreImportGroup();
-                    crossProps.Position = 0;
-                    crossProps.Conditions.Add(CrossTargetingCondition);
-                    crossProps.Imports.AddRange(crossTargetingAssets.Props);
-                    props.Add(crossProps);
-
-                    var crossTargets = new MSBuildRestoreImportGroup();
-                    crossTargets.Position = 0;
-                    crossTargets.Conditions.Add(CrossTargetingCondition);
-                    crossTargets.Imports.AddRange(crossTargetingAssets.Targets);
-                    targets.Add(crossTargets);
-                }
-
-                // Find TFM specific assets from the build folder
-                foreach (var pair in buildAssetsByFramework)
-                {
-                    // There could be multiple string matches
-                    foreach (var match in GetMatchingFrameworkStrings(project, pair.Key))
-                    {
-                        var frameworkCondition = string.Format(CultureInfo.InvariantCulture, TargetFrameworkCondition, match);
-
-                        // Add entries regardless of if imports exist,
-                        // this is needed to trigger conditionals
-                        var propsGroup = new MSBuildRestoreImportGroup();
-
-                        if (isCrossTargeting)
-                        {
-                            propsGroup.Conditions.Add(frameworkCondition);
-                        }
-
-                        propsGroup.Imports.AddRange(pair.Value.Props);
-                        propsGroup.Position = 1;
-                        props.Add(propsGroup);
-
-                        var targetsGroup = new MSBuildRestoreImportGroup();
-
-                        if (isCrossTargeting)
-                        {
-                            targetsGroup.Conditions.Add(frameworkCondition);
-                        }
-
-                        targetsGroup.Imports.AddRange(pair.Value.Targets);
-                        targetsGroup.Position = 1;
-                        targets.Add(targetsGroup);
-                    }
-                }
-            }
-            else
-            {
-                // Copy targets and props over, there can only be 1 tfm here
-                // No conditionals are added
-                var targetsAndProps = buildAssetsByFramework.First();
-
-                var propsGroup = new MSBuildRestoreImportGroup();
-                propsGroup.Imports.AddRange(targetsAndProps.Value.Props);
-                props.Add(propsGroup);
-
-                var targetsGroup = new MSBuildRestoreImportGroup();
-                targetsGroup.Imports.AddRange(targetsAndProps.Value.Targets);
-                targets.Add(targetsGroup);
-            }
-
-            // Add exclude all condition to all groups
-            foreach (var group in props.Concat(targets))
-            {
-                group.Conditions.Add(ExcludeAllCondition);
-            }
-
-            // Targets files contain a macro for the repository root. If only the user package folder was used
-            // allow a replacement. If fallback folders were used the macro cannot be applied.
-            // Do not use macros for fallback folders. Use only the first repository which is the user folder.
-            var repositoryRoot = repositories.First().RepositoryRoot;
-
-            // Create a result which may be committed to disk later.
-            return new MSBuildRestoreResult(
-                targetsPath,
-                propsPath,
-                repositoryRoot,
-                props,
-                targets);
+            return buildAssetsByFramework;
         }
 
         private static HashSet<string> GetMatchingFrameworkStrings(PackageSpec spec, NuGetFramework framework)
@@ -575,22 +662,6 @@ namespace NuGet.Commands
             }
 
             return result;
-        }
-
-        /// <summary>
-        /// Check if NUGET_XPROJ_WRITE_TARGETS is true.
-        /// </summary>
-        private static bool ForceWriteTargets()
-        {
-            var envVar = Environment.GetEnvironmentVariable("NUGET_XPROJ_WRITE_TARGETS");
-
-            bool forceWriteTargets = false;
-            if (!string.IsNullOrEmpty(envVar))
-            {
-                Boolean.TryParse(envVar, out forceWriteTargets);
-            }
-
-            return forceWriteTargets;
         }
 
         /// <summary>

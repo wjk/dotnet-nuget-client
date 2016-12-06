@@ -50,9 +50,6 @@ namespace NuGet.SolutionRestoreManager
             var componentModel = await this.GetComponentModelAsync();
             componentModel.DefaultCompositionService.SatisfyImportsOnce(this);
 
-            await SolutionManager.InitializeAsync(this);
-            await SolutionRestoreWorker.InitializeAsync(this);
-
             await ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();

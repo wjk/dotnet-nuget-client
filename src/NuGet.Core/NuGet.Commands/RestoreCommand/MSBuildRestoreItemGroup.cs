@@ -41,5 +41,19 @@ namespace NuGet.Commands
                 }
             }
         }
+
+        public static MSBuildRestoreItemGroup Create(
+            IEnumerable<XElement> items,
+            int position,
+            IEnumerable<string> conditions)
+        {
+            var group = new MSBuildRestoreItemGroup();
+
+            group.Items.AddRange(items);
+            group.Position = position;
+            group.Conditions.AddRange(conditions);
+
+            return group;
+        }
     }
 }

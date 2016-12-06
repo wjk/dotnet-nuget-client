@@ -110,11 +110,10 @@ namespace NuGet.Commands
             {
                 msbuildOutputFiles = BuildAssetsUtils.GetMSBuildOutputFiles(
                     _request.Project,
+                    lockFile,
                     graphs,
                     localRepositories,
-                    contextForProject,
                     _request,
-                    _includeFlagGraphs,
                     _success,
                     _logger,
                     token);

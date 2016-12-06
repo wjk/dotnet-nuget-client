@@ -28,7 +28,10 @@ namespace NuGet.Commands
         private static readonly XNamespace Namespace = XNamespace.Get("http://schemas.microsoft.com/developer/msbuild/2003");
         internal static readonly string CrossTargetingCondition = "'$(TargetFramework)' == ''";
         internal static readonly string TargetFrameworkCondition = "'$(TargetFramework)' == '{0}'";
+        internal static readonly string LanguageCondition = "'$(Language)' == '{0}'";
         internal static readonly string ExcludeAllCondition = "'$(ExcludeRestorePackageImports)' != 'true'";
+        private const string TargetsExtension = ".targets";
+        private const string PropsExtension = ".props";
 
         /// <summary>
         /// The macros that we may use in MSBuild to replace path roots.
@@ -211,9 +214,12 @@ namespace NuGet.Commands
                                 new XAttribute("Condition", $"Exists('{path}')"));
         }
 
-        public static XElement GenerateContentFilesItem(string ns, string path)
+        public static XElement GenerateContentFilesItem(string path, LockFileContentFile item)
         {
-            throw new NotImplementedException();
+            // TODO: add other attributes
+            return new XElement(Namespace + item.BuildAction.Value,
+                                new XAttribute("Include", path),
+                                new XAttribute("Condition", $"Exists('{path}')"));
         }
 
         /// <summary>
@@ -324,11 +330,10 @@ namespace NuGet.Commands
         }
 
         public static List<MSBuildOutputFile> GetMSBuildOutputFiles(PackageSpec project,
+            LockFile assetsFile,
             IEnumerable<RestoreTargetGraph> targetGraphs,
             IReadOnlyList<NuGetv3LocalRepository> repositories,
-            RemoteWalkContext context,
             RestoreRequest request,
-            Dictionary<RestoreTargetGraph, Dictionary<string, LibraryIncludeFlags>> includeFlagGraphs,
             bool restoreSuccess,
             ILogger log,
             CancellationToken token)
@@ -363,41 +368,132 @@ namespace NuGet.Commands
                     token);
             }
 
-            // Framework -> (targets, props)
-            var buildAssetsByFramework = GetBuildAssetsByFramework(
-                project,
-                targetGraphs,
-                repositories,
-                context,
-                request,
-                includeFlagGraphs);
+            // Add additional conditionals for cross targeting
+            var isCrossTargeting = request.Project.RestoreMetadata.CrossTargeting
+                || request.Project.TargetFrameworks.Count > 1;
 
-            // Add targets and props files from packages.
+            Debug.Assert((!request.Project.RestoreMetadata.CrossTargeting && (request.Project.TargetFrameworks.Count < 2)
+                || (request.Project.RestoreMetadata.CrossTargeting)),
+                "Invalid crosstargeting and framework count combination");
+
+            // ItemGroups for each file.
             var props = new List<MSBuildRestoreItemGroup>();
             var targets = new List<MSBuildRestoreItemGroup>();
 
-            // Conditionals for targets and props are only supported by NETCore
-            if (project.RestoreMetadata?.OutputType == RestoreOutputType.NETCore)
-            {
-                // Populate targets and props for project.assets.json
-                AddNETCoreTargetsAndProps(
-                    project,
-                    targetGraphs,
-                    repositories,
-                    context,
-                    request,
-                    includeFlagGraphs,
-                    buildAssetsByFramework,
-                    props,
-                    targets);
+            // Skip runtime graphs, msbuild targets may not come from RID specific packages.
+            var ridlessTargets = assetsFile.Targets
+                .Where(e => string.IsNullOrEmpty(e.RuntimeIdentifier));
 
-                // Get prop items for contentFiles
-                props.AddRange(GetMSBuildContentFilesGroups());
-            }
-            else
+            foreach (var ridlessTarget in ridlessTargets)
             {
-                // Populate targets and props for project.lock.json
-                AddProjectJsonTargetsAndProps(buildAssetsByFramework, props, targets);
+                // There could be multiple string matches from the MSBuild project.
+                var frameworkConditions = GetMatchingFrameworkStrings(project, ridlessTarget.TargetFramework)
+                    .Select(match => string.Format(CultureInfo.InvariantCulture, TargetFrameworkCondition, match))
+                    .ToArray();
+
+                // Find matching target in the original target graphs.
+                var targetGraph = targetGraphs.FirstOrDefault(e =>
+                    string.IsNullOrEmpty(e.RuntimeIdentifier)
+                    && ridlessTarget.TargetFramework == e.Framework);
+
+                // Sort by dependency order, child package assets should appear higher in the 
+                // msbuild targets and props files so that parents can depend on them.
+                // Package -> PackageInfo
+                // PackageInfo is kept lazy to avoid hitting the disk for packages
+                // with no relevant assets.
+                var sortedPackages = TopologicalSortUtility.SortPackagesByDependencyOrder(ConvertToPackageDependencyInfo(targetGraph.Flattened))
+                                        .Select(sortedPkg =>
+                                            new KeyValuePair<LockFileTargetLibrary, Lazy<LocalPackageSourceInfo>>(
+                                                    key: ridlessTarget.Libraries.FirstOrDefault(assetsPkg =>
+                                                        sortedPkg.Version == assetsPkg.Version
+                                                        && sortedPkg.Id.Equals(assetsPkg.Name, StringComparison.OrdinalIgnoreCase)),
+                                                    value: new Lazy<LocalPackageSourceInfo>(() =>
+                                                        NuGetv3LocalRepositoryUtility.GetPackage(
+                                                            repositories,
+                                                            sortedPkg.Id,
+                                                            sortedPkg.Version))))
+                                        .ToArray();
+
+                // build/ {packageId}.targets
+                var buildTargetsGroup = new MSBuildRestoreItemGroup();
+                buildTargetsGroup.Position = 2;
+
+                buildTargetsGroup.Items.AddRange(sortedPackages.SelectMany(pkg =>
+                    pkg.Key.Build.WithExtension(TargetsExtension)
+                        .Select(e => pkg.Value.GetAbsolutePath(e)))
+                        .Select(path => GetImportPath(path, repositoryRoot))
+                        .Select(GenerateImport));
+
+                targets.AddRange(GetGroupsWithConditions(buildTargetsGroup, isCrossTargeting, frameworkConditions));
+
+                // props/ {packageId}.props
+                var buildPropsGroup = new MSBuildRestoreItemGroup();
+                buildPropsGroup.Position = 2;
+
+                buildPropsGroup.Items.AddRange(sortedPackages.SelectMany(pkg =>
+                    pkg.Key.Build.WithExtension(PropsExtension)
+                        .Select(e => pkg.Value.GetAbsolutePath(e)))
+                        .Select(path => GetImportPath(path, repositoryRoot))
+                        .Select(GenerateImport));
+
+                props.AddRange(GetGroupsWithConditions(buildPropsGroup, isCrossTargeting, frameworkConditions));
+
+                if (isCrossTargeting)
+                {
+                    // buildCrossTargeting/ {packageId}.targets
+                    var buildCrossTargetsGroup = new MSBuildRestoreItemGroup();
+                    buildCrossTargetsGroup.Position = 0;
+
+                    buildCrossTargetsGroup.Items.AddRange(sortedPackages.SelectMany(pkg =>
+                        pkg.Key.BuildCrossTargeting.WithExtension(TargetsExtension)
+                            .Select(e => pkg.Value.GetAbsolutePath(e)))
+                            .Select(path => GetImportPath(path, repositoryRoot))
+                            .Select(GenerateImport));
+
+                    targets.Add(buildCrossTargetsGroup);
+
+                    // buildCrossTargeting/ {packageId}.props
+                    var buildCrossPropsGroup = new MSBuildRestoreItemGroup();
+                    buildCrossPropsGroup.Position = 0;
+
+                    buildCrossPropsGroup.Items.AddRange(sortedPackages.SelectMany(pkg =>
+                        pkg.Key.BuildCrossTargeting.WithExtension(PropsExtension)
+                            .Select(e => pkg.Value.GetAbsolutePath(e)))
+                            .Select(path => GetImportPath(path, repositoryRoot))
+                            .Select(GenerateImport));
+
+                    props.Add(buildCrossPropsGroup);
+                }
+
+                // ContentFiles are read by the build task, not by NuGet
+                // for UAP with project.json.
+                if (request.RestoreOutputType != RestoreOutputType.UAP)
+                {
+                    // contentFiles/
+                    var allLanguages = new SortedSet<string>(
+                            sortedPackages.SelectMany(pkg =>
+                                pkg.Key.ContentFiles.Select(item => item.CodeLanguage)),
+                            StringComparer.OrdinalIgnoreCase);
+
+                    // Create a group for every package, with the nearest from each of allLanguages
+                    props.AddRange(sortedPackages.SelectMany(pkg =>
+                        pkg.Key.ContentFiles
+                                .OrderBy(e => e.Path, StringComparer.Ordinal)
+                                .Select(e =>
+                                    new KeyValuePair<LockFileContentFile, string>(
+                                        key: e,
+                                        value: pkg.Value.GetAbsolutePath(GetImportPath(e.Path, repositoryRoot))))
+                                .GetLanguageGroups(allLanguages))
+                                .GroupBy(e => e.Key, e => e.Value)
+                                .Select(group => MSBuildRestoreItemGroup.Create(
+                                    items: group.SelectMany(e => e)
+                                                .Where(e => PackagingCoreConstants.EmptyFolder != e.Key.Path)
+                                                .Select(e => GenerateContentFilesItem(e.Value, e.Key)),
+                                    position: 1,
+                                    conditions: GetLanguageConditions(group.Key)))
+                                .Where(group => group.Items.Count > 0)
+                                .SelectMany(group => GetGroupsWithConditions(group, isCrossTargeting, frameworkConditions)));
+                }
             }
 
             // Add exclude all condition to all groups
@@ -417,133 +513,78 @@ namespace NuGet.Commands
                 new MSBuildOutputFile(targetsPath, targetsXML)
             };
         }
-        
-        public static List<MSBuildRestoreItemGroup> GetMSBuildContentFilesGroups()
+
+        private static IEnumerable<string> GetLanguageConditions(string language)
         {
-            throw new NotImplementedException();
-        }
-
-        private static void AddProjectJsonTargetsAndProps(
-            Dictionary<NuGetFramework, TargetsAndProps> buildAssetsByFramework,
-            List<MSBuildRestoreItemGroup> props,
-            List<MSBuildRestoreItemGroup> targets)
-        {
-            // Copy targets and props over, there can only be 1 tfm here
-            // No conditionals are added
-            var targetsAndProps = buildAssetsByFramework.First();
-
-            var propsGroup = new MSBuildRestoreItemGroup();
-            propsGroup.Items.AddRange(targetsAndProps.Value.Props.Select(GenerateImport));
-            props.Add(propsGroup);
-
-            var targetsGroup = new MSBuildRestoreItemGroup();
-            targetsGroup.Items.AddRange(targetsAndProps.Value.Targets.Select(GenerateImport));
-            targets.Add(targetsGroup);
-        }
-
-        private static void AddNETCoreTargetsAndProps(
-            PackageSpec project,
-            IEnumerable<RestoreTargetGraph> targetGraphs,
-            IReadOnlyList<NuGetv3LocalRepository> repositories,
-            RemoteWalkContext context,
-            RestoreRequest request,
-            Dictionary<RestoreTargetGraph, Dictionary<string, LibraryIncludeFlags>> includeFlagGraphs,
-            Dictionary<NuGetFramework,TargetsAndProps> buildAssetsByFramework,
-            List<MSBuildRestoreItemGroup> props,
-            List<MSBuildRestoreItemGroup> targets)
-        {
-            // Add additional conditionals for cross targeting
-            var isCrossTargeting = request.Project.RestoreMetadata.CrossTargeting
-                || request.Project.TargetFrameworks.Count > 1;
-
-            Debug.Assert((!request.Project.RestoreMetadata.CrossTargeting && (request.Project.TargetFrameworks.Count < 2)
-                || (request.Project.RestoreMetadata.CrossTargeting)),
-                "Invalid crosstargeting and framework count combination");
-
-            if (isCrossTargeting)
+            if (!PackagingConstants.AnyCodeLanguage.Equals(language, StringComparison.OrdinalIgnoreCase))
             {
-                // Find all global targets from buildCrossTargeting
-                var crossTargetingAssets = GetTargetsAndPropsForCrossTargeting(
-                        targetGraphs,
-                        repositories,
-                        context,
-                        request,
-                        includeFlagGraphs);
-
-                var crossProps = new MSBuildRestoreItemGroup();
-                crossProps.Position = 0;
-                crossProps.Conditions.Add(CrossTargetingCondition);
-                crossProps.Items.AddRange(crossTargetingAssets.Props.Select(GenerateImport));
-                props.Add(crossProps);
-
-                var crossTargets = new MSBuildRestoreItemGroup();
-                crossTargets.Position = 0;
-                crossTargets.Conditions.Add(CrossTargetingCondition);
-                crossTargets.Items.AddRange(crossTargetingAssets.Targets.Select(GenerateImport));
-                targets.Add(crossTargets);
+                yield return string.Format(CultureInfo.InvariantCulture, LanguageCondition, language);
             }
+        }
 
-            // Find TFM specific assets from the build folder
-            foreach (var pair in buildAssetsByFramework)
+        private static Dictionary<string, List<KeyValuePair<LockFileContentFile, string>>> GetLanguageGroups(
+            this IEnumerable<KeyValuePair<LockFileContentFile, string>> items,
+            SortedSet<string> allLanguages)
+        {
+            // Fallback group
+            var anyGroup = items.Where(e =>
+                PackagingConstants.AnyCodeLanguage.Equals(e.Key.CodeLanguage, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+
+            var groups = new Dictionary<string, List<KeyValuePair<LockFileContentFile, string>>>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var lang in allLanguages)
             {
-                // There could be multiple string matches
-                foreach (var match in GetMatchingFrameworkStrings(project, pair.Key))
+                var langItems = new List<KeyValuePair<LockFileContentFile, string>>();
+                groups.Add(lang, langItems);
+
+                langItems.AddRange(items.Where(e =>
+                    lang.Equals(e.Key.CodeLanguage, StringComparison.OrdinalIgnoreCase)));
+
+                if (langItems.Count < 1)
                 {
-                    var frameworkCondition = string.Format(CultureInfo.InvariantCulture, TargetFrameworkCondition, match);
-
-                    // Add entries regardless of if imports exist,
-                    // this is needed to trigger conditionals
-                    var propsGroup = new MSBuildRestoreItemGroup();
-
-                    if (isCrossTargeting)
-                    {
-                        propsGroup.Conditions.Add(frameworkCondition);
-                    }
-
-                    propsGroup.Items.AddRange(pair.Value.Props.Select(GenerateImport));
-                    propsGroup.Position = 1;
-                    props.Add(propsGroup);
-
-                    var targetsGroup = new MSBuildRestoreItemGroup();
-
-                    if (isCrossTargeting)
-                    {
-                        targetsGroup.Conditions.Add(frameworkCondition);
-                    }
-
-                    targetsGroup.Items.AddRange(pair.Value.Targets.Select(GenerateImport));
-                    targetsGroup.Position = 1;
-                    targets.Add(targetsGroup);
+                    langItems.AddRange(anyGroup);
                 }
             }
+
+            return groups;
         }
 
-        private static Dictionary<NuGetFramework, TargetsAndProps> GetBuildAssetsByFramework(
-            PackageSpec project,
-            IEnumerable<RestoreTargetGraph> targetGraphs,
-            IReadOnlyList<NuGetv3LocalRepository> repositories,
-            RemoteWalkContext context,
-            RestoreRequest request,
-            Dictionary<RestoreTargetGraph, Dictionary<string, LibraryIncludeFlags>> includeFlagGraphs)
+        private static IEnumerable<MSBuildRestoreItemGroup> GetGroupsWithConditions(
+            MSBuildRestoreItemGroup original,
+            bool isCrossTargeting,
+            params string[] conditions)
         {
-            var buildAssetsByFramework = new Dictionary<NuGetFramework, TargetsAndProps>();
-
-            // Get assets for each framework
-            foreach (var projectFramework in project.TargetFrameworks.Select(f => f.FrameworkName))
+            if (!isCrossTargeting)
             {
-                var targetsAndProps =
-                    GetTargetsAndPropsForFramework(
-                        targetGraphs,
-                        repositories,
-                        context,
-                        request,
-                        includeFlagGraphs,
-                        projectFramework);
-
-                buildAssetsByFramework.Add(projectFramework, targetsAndProps);
+                // No changes needed
+                yield return original;
             }
 
-            return buildAssetsByFramework;
+            foreach (var condition in conditions)
+            {
+                yield return new MSBuildRestoreItemGroup()
+                {
+                    Position = original.Position,
+                    Items = original.Items,
+                    Conditions = original.Conditions.Concat(new[] { condition }).ToList()
+                };
+            }
+        }
+
+        private static string GetAbsolutePath(this Lazy<LocalPackageSourceInfo> package, LockFileItem item)
+        {
+            return Path.Combine(package.Value.Package.ExpandedPath, LockFileUtils.ToDirectorySeparator(item.Path));
+        }
+
+        private static IEnumerable<LockFileItem> WithExtension(this IList<LockFileItem> items, string extension)
+        {
+            if (items == null)
+            {
+                return Enumerable.Empty<LockFileItem>();
+            }
+
+            return items.Where(c => extension.Equals(Path.GetExtension(c.Path), StringComparison.OrdinalIgnoreCase));
         }
 
         private static HashSet<string> GetMatchingFrameworkStrings(PackageSpec spec, NuGetFramework framework)
@@ -563,163 +604,6 @@ namespace NuGet.Commands
             return matches;
         }
 
-        private static TargetsAndProps GetTargetsAndPropsForFramework(
-            IEnumerable<RestoreTargetGraph> targetGraphs,
-            IReadOnlyList<NuGetv3LocalRepository> repositories,
-            RemoteWalkContext context,
-            RestoreRequest request,
-            Dictionary<RestoreTargetGraph,
-            Dictionary<string, LibraryIncludeFlags>> includeFlagGraphs,
-            NuGetFramework projectFramework)
-        {
-            var result = new TargetsAndProps();
-
-            // Skip runtime graphs, msbuild targets may not come from RID specific packages
-            var graph = targetGraphs
-                .Single(g => string.IsNullOrEmpty(g.RuntimeIdentifier) && g.Framework.Equals(projectFramework));
-
-            // Gather props and targets to write out
-            var buildGroupSets = GetMSBuildAssets(
-                context,
-                graph,
-                request.Project,
-                includeFlagGraphs,
-                graph.Conventions.Patterns.MSBuildFiles);
-
-            // Second find the nearest group for each framework
-            foreach (var buildGroupSetsEntry in buildGroupSets)
-            {
-                var libraryIdentity = buildGroupSetsEntry.Key;
-                var buildGroupSet = buildGroupSetsEntry.Value;
-
-                // Find the nearest msbuild group, this can include the root level Any group.
-                var buildItems = NuGetFrameworkUtility.GetNearest(
-                        buildGroupSet,
-                        graph.Framework,
-                        group =>
-                            group.Properties[ManagedCodeConventions.PropertyNames.TargetFrameworkMoniker]
-                                as NuGetFramework);
-
-                // Check if compatible build assets exist
-                if (buildItems != null)
-                {
-                    AddPropsAndTargets(repositories, libraryIdentity, buildItems, result);
-                }
-            }
-
-            return result;
-        }
-
-        private static TargetsAndProps GetTargetsAndPropsForCrossTargeting(
-            IEnumerable<RestoreTargetGraph> targetGraphs,
-            IReadOnlyList<NuGetv3LocalRepository> repositories,
-            RemoteWalkContext context,
-            RestoreRequest request,
-            Dictionary<RestoreTargetGraph,
-            Dictionary<string, LibraryIncludeFlags>> includeFlagGraphs)
-        {
-            var result = new TargetsAndProps();
-
-            // Skip runtime graphs, msbuild targets may not come from RID specific packages
-            // Order the graphs by framework to make this deterministic for scenarios where
-            // TFMs disagree on the dependency order, there is little that can be done for
-            // conflicts where A->B for TFM1 and B->A for TFM2.
-            var ridlessGraphs = targetGraphs
-                .Where(g => string.IsNullOrEmpty(g.RuntimeIdentifier))
-                .OrderBy(g => g.Framework, new NuGetFrameworkSorter());
-
-            // Gather props and targets to write out
-            foreach (var graph in ridlessGraphs)
-            {
-                var globalGroupSets = GetMSBuildAssets(
-                    context,
-                    graph,
-                    request.Project,
-                    includeFlagGraphs,
-                    graph.Conventions.Patterns.MSBuildCrossTargetingFiles);
-
-                // Check if compatible build assets exist
-                foreach (var globalGroupEntry in globalGroupSets)
-                {
-                    var libraryIdentity = globalGroupEntry.Key;
-                    var buildGroupSet = globalGroupEntry.Value;
-
-                    Debug.Assert(buildGroupSet.Length < 2, "Unexpected number of build global asset groups");
-
-                    // There can only be one group since there are no TFMs here.
-                    if (buildGroupSet.Length == 1)
-                    {
-                        // Add all targets and props from buildCrossTargeting
-                        // Note: AddPropsAndTargets handles de-duping file paths. Since these non-TFM specific
-                        // files are found for every TFM it is likely that there will be duplicates going in.
-                        AddPropsAndTargets(
-                                repositories,
-                                libraryIdentity,
-                                buildGroupSet[0],
-                                result);
-                    }
-                }
-            }
-
-            return result;
-        }
-
-        /// <summary>
-        /// Find all included msbuild assets for a graph.
-        /// </summary>
-        private static Dictionary<PackageIdentity, ContentItemGroup[]> GetMSBuildAssets(
-            RemoteWalkContext context,
-            RestoreTargetGraph graph,
-            PackageSpec project,
-            Dictionary<RestoreTargetGraph, Dictionary<string, LibraryIncludeFlags>> includeFlagGraphs,
-            PatternSet patternSet)
-        {
-            var buildGroupSets = new Dictionary<PackageIdentity, ContentItemGroup[]>();
-
-            var flattenedFlags = IncludeFlagUtils.FlattenDependencyTypes(includeFlagGraphs, project, graph);
-
-            // convert graph items to package dependency info list
-            var dependencies = ConvertToPackageDependencyInfo(graph.Flattened);
-
-            // sort graph nodes by dependencies order
-            var sortedItems = TopologicalSortUtility.SortPackagesByDependencyOrder(dependencies);
-
-            // First find all msbuild items in the packages
-            foreach (var library in sortedItems)
-            {
-                var includeLibrary = true;
-
-                LibraryIncludeFlags libraryFlags;
-                if (flattenedFlags.TryGetValue(library.Id, out libraryFlags))
-                {
-                    includeLibrary = libraryFlags.HasFlag(LibraryIncludeFlags.Build);
-                }
-
-                // Skip libraries that do not include build files such as transitive packages
-                if (includeLibrary)
-                {
-                    var packageIdentity = new PackageIdentity(library.Id, library.Version);
-                    IList<string> packageFiles;
-                    context.PackageFileCache.TryGetValue(packageIdentity, out packageFiles);
-
-                    if (packageFiles != null)
-                    {
-                        var contentItemCollection = new ContentItemCollection();
-                        contentItemCollection.Load(packageFiles);
-
-                        // Find MSBuild groups
-                        var buildGroupSet = contentItemCollection
-                            .FindItemGroups(patternSet)
-                            .ToArray();
-
-                        buildGroupSets.Add(packageIdentity, buildGroupSet);
-                    }
-                }
-            }
-
-            return buildGroupSets;
-        }
-
         private static HashSet<PackageDependencyInfo> ConvertToPackageDependencyInfo(
             ISet<GraphItem<RemoteResolveResult>> items)
         {
@@ -735,65 +619,6 @@ namespace NuGet.Commands
             }
 
             return result;
-        }
-
-        /// <summary>
-        /// Add all valid targets and props to the passed in lists.
-        /// Modifies targetsAndProps
-        /// </summary>
-        private static void AddPropsAndTargets(
-            IReadOnlyList<NuGetv3LocalRepository> repositories,
-            PackageIdentity libraryIdentity,
-            ContentItemGroup buildItems,
-            TargetsAndProps targetsAndProps)
-        {
-            // We need to additionally filter to items that are named "{packageId}.targets" and "{packageId}.props"
-            // Filter by file name here and we'll filter by extension when we add things to the lists.
-            var items = buildItems.Items
-                .Where(item =>
-                    Path.GetFileNameWithoutExtension(item.Path)
-                    .Equals(libraryIdentity.Id, StringComparison.OrdinalIgnoreCase))
-                .ToList();
-
-            var packageInfo = NuGetv3LocalRepositoryUtility.GetPackage(repositories, libraryIdentity.Id, libraryIdentity.Version);
-            var pathResolver = packageInfo.Repository.PathResolver;
-
-            var targets = items
-                .Where(c => Path.GetExtension(c.Path).Equals(".targets", StringComparison.OrdinalIgnoreCase))
-                .Select(c =>
-                    Path.Combine(pathResolver.GetInstallPath(libraryIdentity.Id, libraryIdentity.Version),
-                    c.Path.Replace('/', Path.DirectorySeparatorChar)));
-
-            // avoid duplicate targets
-            foreach (var target in targets)
-            {
-                if (!targetsAndProps.Targets.Contains(target, StringComparer.Ordinal))
-                {
-                    targetsAndProps.Targets.Add(target);
-                }
-            }
-
-            var props = items
-                .Where(c => Path.GetExtension(c.Path).Equals(".props", StringComparison.OrdinalIgnoreCase))
-                .Select(c =>
-                    Path.Combine(pathResolver.GetInstallPath(libraryIdentity.Id, libraryIdentity.Version),
-                    c.Path.Replace('/', Path.DirectorySeparatorChar)));
-
-            foreach (var prop in props)
-            {
-                // avoid duplicate props
-                if (!targetsAndProps.Props.Contains(prop, StringComparer.Ordinal))
-                {
-                    targetsAndProps.Props.Add(prop);
-                }
-            }
-        }
-
-        private class TargetsAndProps
-        {
-            public List<string> Targets { get; } = new List<string>();
-
-            public List<string> Props { get; } = new List<string>();
         }
     }
 }

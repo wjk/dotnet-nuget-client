@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using NuGet.Client;
@@ -548,6 +549,25 @@ namespace NuGet.Commands
             }
 
             return results;
+        }
+
+        /// <summary>
+        /// Replace / with the local directory separator if needed.
+        /// For OSX and Linux the same string is returned.
+        /// </summary>
+        public static string ToDirectorySeparator(string path)
+        {
+            if (path == null)
+            {
+                throw new ArgumentNullException(nameof(path));
+            }
+
+            if (Path.DirectorySeparatorChar == '/')
+            {
+                return path;
+            }
+
+            return path.Replace('/', Path.DirectorySeparatorChar);
         }
     }
 }

@@ -477,22 +477,22 @@ namespace NuGet.Commands
 
                     // Create a group for every package, with the nearest from each of allLanguages
                     props.AddRange(sortedPackages.SelectMany(pkg =>
-                        pkg.Key.ContentFiles
+                         pkg.Key.ContentFiles
                                 .OrderBy(e => e.Path, StringComparer.Ordinal)
                                 .Select(e =>
                                     new KeyValuePair<LockFileContentFile, string>(
                                         key: e,
                                         value: pkg.Value.GetAbsolutePath(GetImportPath(e.Path, repositoryRoot))))
                                 .GetLanguageGroups(allLanguages))
-                                .GroupBy(e => e.Key, e => e.Value)
-                                .Select(group => MSBuildRestoreItemGroup.Create(
-                                    items: group.SelectMany(e => e)
-                                                .Where(e => PackagingCoreConstants.EmptyFolder != e.Key.Path)
-                                                .Select(e => GenerateContentFilesItem(e.Value, e.Key)),
-                                    position: 1,
-                                    conditions: GetLanguageConditions(group.Key)))
-                                .Where(group => group.Items.Count > 0)
-                                .SelectMany(group => GetGroupsWithConditions(group, isCrossTargeting, frameworkConditions)));
+                        .GroupBy(e => e.Key, e => e.Value)
+                        .Select(group => MSBuildRestoreItemGroup.Create(
+                            items: group.SelectMany(e => e)
+                                        .Where(e => PackagingCoreConstants.EmptyFolder != e.Key.Path)
+                                        .Select(e => GenerateContentFilesItem(e.Value, e.Key)),
+                            position: 1,
+                            conditions: GetLanguageConditions(group.Key)))
+                        .Where(group => group.Items.Count > 0)
+                        .SelectMany(group => GetGroupsWithConditions(group, isCrossTargeting, frameworkConditions)));
                 }
             }
 

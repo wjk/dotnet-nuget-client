@@ -129,7 +129,10 @@ namespace NuGet.Commands
             // Commit targets/props to disk before the assets file.
             // Visual Studio typically watches the assets file for changes
             // and begins a reload when that file changes.
-            BuildAssetsUtils.WriteFiles(MSBuildOutputFiles, log);
+            var buildFilesToWrite = MSBuildOutputFiles.Where(e => forceWrite 
+                || BuildAssetsUtils.HasChanges(e.Content, e.Path, log));
+
+            BuildAssetsUtils.WriteFiles(buildFilesToWrite, log);
 
             // Commit the assets file to disk.
             await CommitAsync(

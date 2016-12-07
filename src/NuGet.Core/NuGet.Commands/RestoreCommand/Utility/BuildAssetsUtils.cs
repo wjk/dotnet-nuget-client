@@ -29,6 +29,7 @@ namespace NuGet.Commands
         internal static readonly string CrossTargetingCondition = "'$(TargetFramework)' == ''";
         internal static readonly string TargetFrameworkCondition = "'$(TargetFramework)' == '{0}'";
         internal static readonly string LanguageCondition = "'$(Language)' == '{0}'";
+        internal static readonly string NegativeLanguageCondition = "'$(Language)' != '{0}'";
         internal static readonly string ExcludeAllCondition = "'$(ExcludeRestorePackageImports)' != 'true'";
         private const string TargetsExtension = ".targets";
         private const string PropsExtension = ".props";
@@ -294,13 +295,21 @@ namespace NuGet.Commands
         /// </summary>
         public static bool HasChanges(XDocument newFile, string path, ILogger log)
         {
-            XDocument existing = ReadExisting(path, log);
-
-            if (existing != null)
+            if (newFile == null)
             {
-                // Use a simple string compare to check if the files match
-                // This can be optimized in the future, but generally these are very small files.
-                return !newFile.ToString().Equals(existing.ToString(), StringComparison.Ordinal);
+                // The file should be deleted if it is null.
+                return File.Exists(path);
+            }
+            else
+            {
+                var existing = ReadExisting(path, log);
+
+                if (existing != null)
+                {
+                    // Use a simple string compare to check if the files match
+                    // This can be optimized in the future, but generally these are very small files.
+                    return !newFile.ToString().Equals(existing.ToString(), StringComparison.Ordinal);
+                }
             }
 
             return true;
@@ -339,15 +348,24 @@ namespace NuGet.Commands
             CancellationToken token)
         {
             // Generate file names
-            var targetsPath = Path.Combine(request.RestoreOutputPath, $"{project.Name}.nuget.targets");
-            var propsPath = Path.Combine(request.RestoreOutputPath, $"{project.Name}.nuget.props");
+            var targetsPath = string.Empty;
+            var propsPath = string.Empty;
 
             if (request.RestoreOutputType == RestoreOutputType.NETCore)
             {
+                // PackageReference style projects
                 var projFileName = Path.GetFileName(request.Project.RestoreMetadata.ProjectPath);
 
                 targetsPath = Path.Combine(request.RestoreOutputPath, $"{projFileName}.nuget.g.targets");
                 propsPath = Path.Combine(request.RestoreOutputPath, $"{projFileName}.nuget.g.props");
+            }
+            else
+            {
+                // Project.json style projects
+                var dir = Path.GetDirectoryName(project.FilePath);
+
+                targetsPath = Path.Combine(dir, $"{project.Name}.nuget.targets");
+                propsPath = Path.Combine(dir, $"{project.Name}.nuget.props");
             }
 
             // Targets files contain a macro for the repository root. If only the user package folder was used
@@ -369,12 +387,10 @@ namespace NuGet.Commands
             }
 
             // Add additional conditionals for cross targeting
-            var isCrossTargeting = request.Project.RestoreMetadata.CrossTargeting
-                || request.Project.TargetFrameworks.Count > 1;
+            var crossTargetingFromMetadata = (request.Project.RestoreMetadata?.CrossTargeting == true);
 
-            Debug.Assert((!request.Project.RestoreMetadata.CrossTargeting && (request.Project.TargetFrameworks.Count < 2)
-                || (request.Project.RestoreMetadata.CrossTargeting)),
-                "Invalid crosstargeting and framework count combination");
+            var isCrossTargeting = crossTargetingFromMetadata
+                || request.Project.TargetFrameworks.Count > 1;
 
             // ItemGroups for each file.
             var props = new List<MSBuildRestoreItemGroup>();
@@ -398,21 +414,29 @@ namespace NuGet.Commands
 
                 // Sort by dependency order, child package assets should appear higher in the 
                 // msbuild targets and props files so that parents can depend on them.
+                var sortedGraph = TopologicalSortUtility.SortPackagesByDependencyOrder(ConvertToPackageDependencyInfo(targetGraph.Flattened));
+
+                // Filter out to packages only, exclude projects.
+                var packageType = new HashSet<string>(
+                    targetGraph.Flattened.Where(e => e.Key.Type == LibraryType.Package)
+                        .Select(e => e.Key.Name),
+                    StringComparer.OrdinalIgnoreCase);
+
                 // Package -> PackageInfo
                 // PackageInfo is kept lazy to avoid hitting the disk for packages
                 // with no relevant assets.
-                var sortedPackages = TopologicalSortUtility.SortPackagesByDependencyOrder(ConvertToPackageDependencyInfo(targetGraph.Flattened))
-                                        .Select(sortedPkg =>
-                                            new KeyValuePair<LockFileTargetLibrary, Lazy<LocalPackageSourceInfo>>(
-                                                    key: ridlessTarget.Libraries.FirstOrDefault(assetsPkg =>
-                                                        sortedPkg.Version == assetsPkg.Version
-                                                        && sortedPkg.Id.Equals(assetsPkg.Name, StringComparison.OrdinalIgnoreCase)),
-                                                    value: new Lazy<LocalPackageSourceInfo>(() =>
-                                                        NuGetv3LocalRepositoryUtility.GetPackage(
-                                                            repositories,
-                                                            sortedPkg.Id,
-                                                            sortedPkg.Version))))
-                                        .ToArray();
+                var sortedPackages = sortedGraph.Where(e => packageType.Contains(e.Id))
+                                                .Select(sortedPkg =>
+                                                    new KeyValuePair<LockFileTargetLibrary, Lazy<LocalPackageSourceInfo>>(
+                                                        key: ridlessTarget.Libraries.FirstOrDefault(assetsPkg =>
+                                                            sortedPkg.Version == assetsPkg.Version
+                                                            && sortedPkg.Id.Equals(assetsPkg.Name, StringComparison.OrdinalIgnoreCase)),
+                                                        value: new Lazy<LocalPackageSourceInfo>(() =>
+                                                            NuGetv3LocalRepositoryUtility.GetPackage(
+                                                                repositories,
+                                                                sortedPkg.Id,
+                                                                sortedPkg.Version))))
+                                                .ToArray();
 
                 // build/ {packageId}.targets
                 var buildTargetsGroup = new MSBuildRestoreItemGroup();
@@ -450,7 +474,7 @@ namespace NuGet.Commands
                             .Select(path => GetImportPath(path, repositoryRoot))
                             .Select(GenerateImport));
 
-                    targets.Add(buildCrossTargetsGroup);
+                    targets.AddRange(GetGroupsWithConditions(buildCrossTargetsGroup, isCrossTargeting, CrossTargetingCondition));
 
                     // buildCrossTargeting/ {packageId}.props
                     var buildCrossPropsGroup = new MSBuildRestoreItemGroup();
@@ -462,7 +486,7 @@ namespace NuGet.Commands
                             .Select(path => GetImportPath(path, repositoryRoot))
                             .Select(GenerateImport));
 
-                    props.Add(buildCrossPropsGroup);
+                    props.AddRange(GetGroupsWithConditions(buildCrossPropsGroup, isCrossTargeting, CrossTargetingCondition));
                 }
 
                 // ContentFiles are read by the build task, not by NuGet
@@ -487,10 +511,10 @@ namespace NuGet.Commands
                         .GroupBy(e => e.Key, e => e.Value)
                         .Select(group => MSBuildRestoreItemGroup.Create(
                             items: group.SelectMany(e => e)
-                                        .Where(e => PackagingCoreConstants.EmptyFolder != e.Key.Path)
+                                        .Where(e => !e.Key.Path.EndsWith(PackagingCoreConstants.ForwardSlashEmptyFolder))
                                         .Select(e => GenerateContentFilesItem(e.Value, e.Key)),
                             position: 1,
-                            conditions: GetLanguageConditions(group.Key)))
+                            conditions: GetLanguageConditions(group.Key, allLanguages)))
                         .Where(group => group.Items.Count > 0)
                         .SelectMany(group => GetGroupsWithConditions(group, isCrossTargeting, frameworkConditions)));
                 }
@@ -514,9 +538,16 @@ namespace NuGet.Commands
             };
         }
 
-        private static IEnumerable<string> GetLanguageConditions(string language)
+        private static IEnumerable<string> GetLanguageConditions(string language, SortedSet<string> allLanguages)
         {
-            if (!PackagingConstants.AnyCodeLanguage.Equals(language, StringComparison.OrdinalIgnoreCase))
+            if (PackagingConstants.AnyCodeLanguage.Equals(language, StringComparison.OrdinalIgnoreCase))
+            {
+                foreach (var lang in allLanguages)
+                {
+                    yield return string.Format(CultureInfo.InvariantCulture, NegativeLanguageCondition, language);
+                }
+            }
+            else
             {
                 yield return string.Format(CultureInfo.InvariantCulture, LanguageCondition, language);
             }
@@ -592,8 +623,11 @@ namespace NuGet.Commands
             // Ignore case since msbuild does
             var matches = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            matches.UnionWith(spec.RestoreMetadata.OriginalTargetFrameworks
-                .Where(s => framework.Equals(NuGetFramework.Parse(s))));
+            if (spec.RestoreMetadata != null)
+            {
+                matches.UnionWith(spec.RestoreMetadata.OriginalTargetFrameworks
+                    .Where(s => framework.Equals(NuGetFramework.Parse(s))));
+            }
 
             // If there were no matches, use the generated name
             if (matches.Count < 1)

@@ -324,7 +324,7 @@ namespace NuGet.Commands.Test
                 Assert.Equal(2, projects[0].AssetsFile.Libraries.Count);
 
                 // Verify the project name is used not the path or unique name
-                Assert.Equal("projectB", dependencies[0]);
+                Assert.Equal("projectB >= 1.0.0", dependencies[0]);
             }
         }
 

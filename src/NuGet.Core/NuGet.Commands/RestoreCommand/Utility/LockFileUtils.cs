@@ -292,6 +292,12 @@ namespace NuGet.Commands
                 lockFileLib.ContentFiles.Add(ContentFileUtils.CreateEmptyItem());
             }
 
+            if ((dependencyType & LibraryIncludeFlags.Build) == LibraryIncludeFlags.None)
+            {
+                ClearIfExists(lockFileLib.Build);
+                ClearIfExists(lockFileLib.BuildCrossTargeting);
+            }
+
             return lockFileLib;
         }
 

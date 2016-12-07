@@ -126,14 +126,6 @@ namespace NuGet.Commands
 
             var isTool = OutputType == RestoreOutputType.DotnetCliTool;
 
-            // Commit targets/props to disk before the assets file.
-            // Visual Studio typically watches the assets file for changes
-            // and begins a reload when that file changes.
-            var buildFilesToWrite = MSBuildOutputFiles.Where(e => forceWrite 
-                || BuildAssetsUtils.HasChanges(e.Content, e.Path, log));
-
-            BuildAssetsUtils.WriteFiles(buildFilesToWrite, log);
-
             // Commit the assets file to disk.
             await CommitAsync(
                 lockFileFormat,
@@ -152,6 +144,14 @@ namespace NuGet.Commands
             bool toolCommit,
             CancellationToken token)
         {
+            // Commit targets/props to disk before the assets file.
+            // Visual Studio typically watches the assets file for changes
+            // and begins a reload when that file changes.
+            var buildFilesToWrite = result.MSBuildOutputFiles
+                    .Where(e => forceWrite || BuildAssetsUtils.HasChanges(e.Content, e.Path, log));
+
+            BuildAssetsUtils.WriteFiles(buildFilesToWrite, log);
+
             // Avoid writing out the lock file if it is the same to avoid triggering an intellisense
             // update on a restore with no actual changes.
             if (forceWrite

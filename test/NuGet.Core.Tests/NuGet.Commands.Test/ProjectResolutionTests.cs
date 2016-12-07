@@ -7,14 +7,11 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
-using NuGet.Common;
 using NuGet.Configuration;
 using NuGet.Frameworks;
-using NuGet.LibraryModel;
 using NuGet.ProjectModel;
 using NuGet.Protocol.Core.Types;
 using NuGet.Test.Utility;
-using NuGet.Versioning;
 using Xunit;
 
 namespace NuGet.Commands.Test
@@ -524,7 +521,7 @@ namespace NuGet.Commands.Test
 
                 // Modify specs for netcore
                 spec2 = spec2.WithTestRestoreMetadata();
-                spec1 = spec1.WithTestRestoreMetadata().WithTestProjectReference(spec2);                
+                spec1 = spec1.WithTestRestoreMetadata().WithTestProjectReference(spec2);
 
                 var request = await ProjectJsonTestHelpers.GetRequestAsync(restoreContext, spec1, spec2);
                 request.LockFilePath = Path.Combine(project1.FullName, "project.lock.json");

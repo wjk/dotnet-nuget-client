@@ -383,6 +383,20 @@ namespace NuGet.ProjectModel
                 json[ContentFilesProperty] = WriteObject(ordered, WriteFileItem);
             }
 
+            if (library.Build.Count > 0)
+            {
+                var ordered = library.Build.OrderBy(assembly => assembly.Path, StringComparer.Ordinal);
+
+                json[BuildProperty] = WriteObject(ordered, WriteFileItem);
+            }
+
+            if (library.BuildCrossTargeting.Count > 0)
+            {
+                var ordered = library.BuildCrossTargeting.OrderBy(assembly => assembly.Path, StringComparer.Ordinal);
+
+                json[BuildCrossTargetingProperty] = WriteObject(ordered, WriteFileItem);
+            }
+
             if (library.RuntimeTargets.Count > 0)
             {
                 var ordered = library.RuntimeTargets.OrderBy(assembly => assembly.Path, StringComparer.Ordinal);

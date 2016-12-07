@@ -8,54 +8,31 @@ using System.Linq;
 using System.Xml.Linq;
 using NuGet.Common;
 using NuGet.Configuration;
+using NuGet.ProjectModel;
 using NuGet.Test.Utility;
 using Xunit;
 
 namespace NuGet.Commands.Test
 {
-    public class MSBuildRestoreResultTests
+    public class BuildAssetsUtilsTests
     {
         [Fact]
-        public void MSBuildRestoreResult_ReplaceWithUserProfileMacro()
+        public void BuildAssetsUtils_ReplaceWithUserProfileMacro()
         {
             // Arrange
             using (var randomProjectDirectory = TestDirectory.Create())
             {
-                var projectName = "testproject";
                 var globalPackagesFolder = SettingsUtility.GetGlobalPackagesFolder(NullSettings.Instance);
 
                 if (!string.IsNullOrEmpty(globalPackagesFolder))
                 {
-                    // Only run the test if globalPackagesFolder can be determined
-                    // Because, globalPackagesFolder would be null if %USERPROFILE% was null
-
-                    var targetsName = $"{projectName}.nuget.targets";
-                    var targetsPath = Path.Combine(randomProjectDirectory, targetsName);
-
-                    var propsName = $"{projectName}.nuget.props";
-                    var propsPath = Path.Combine(randomProjectDirectory, propsName);
-
-                    var targets = new List<MSBuildRestoreImportGroup>();
-                    targets.Add(new MSBuildRestoreImportGroup()
-                    {
-                        Imports = new List<string>() { "blah" }
-                    });
-
-                    var msBuildRestoreResult = new MSBuildRestoreResult(
-                        targetsPath,
-                        propsPath,
+                    // Act
+                    var xml = BuildAssetsUtils.GenerateEmptyImportsFile(
                         globalPackagesFolder,
-                        new List<MSBuildRestoreImportGroup>(),
-                        targets);
+                        RestoreOutputType.NETCore,
+                        success: true);
 
                     // Assert
-                    Assert.False(File.Exists(targetsPath));
-
-                    // Act
-                    msBuildRestoreResult.Commit(Common.NullLogger.Instance);
-
-                    Assert.True(File.Exists(targetsPath));
-                    var xml = XDocument.Load(targetsPath);
                     var ns = XNamespace.Get("http://schemas.microsoft.com/developer/msbuild/2003");
                     var elements = xml.Root.Descendants(ns + "NuGetPackageRoot");
                     Assert.Single(elements);
@@ -77,7 +54,7 @@ namespace NuGet.Commands.Test
         }
 
         [Fact]
-        public void MSBuildRestoreResult_MultipleTFMs_CrossTargeting()
+        public void BuildAssetsUtils_MultipleTFMs_CrossTargeting()
         {
             // Arrange
             using (var globalPackagesFolder = TestDirectory.Create())
@@ -91,14 +68,15 @@ namespace NuGet.Commands.Test
                 var propsName = $"{projectName}.nuget.g.props";
                 var propsPath = Path.Combine(randomProjectDirectory, propsName);
 
-                var propGroups = new List<MSBuildRestoreImportGroup>();
-                var targetGroups = new List<MSBuildRestoreImportGroup>();
+                var propGroups = new List<MSBuildRestoreItemGroup>();
+                var targetGroups = new List<MSBuildRestoreItemGroup>();
 
-                targetGroups.Add(new MSBuildRestoreImportGroup()
+                targetGroups.Add(new MSBuildRestoreItemGroup()
                 {
-                    Imports = new List<string>()
+                    Items = new List<XElement>()
                     {
-                        "a.targets", "b.targets"
+                        BuildAssetsUtils.GenerateImport("a.targets"),
+                        BuildAssetsUtils.GenerateImport("b.targets")
                     },
                     Conditions = new List<string>()
                     {
@@ -106,11 +84,11 @@ namespace NuGet.Commands.Test
                     }
                 });
 
-                targetGroups.Add(new MSBuildRestoreImportGroup()
+                targetGroups.Add(new MSBuildRestoreItemGroup()
                 {
-                    Imports = new List<string>()
+                    Items = new List<XElement>()
                     {
-                        "c.targets"
+                        BuildAssetsUtils.GenerateImport("c.targets")
                     },
                     Conditions = new List<string>()
                     {
@@ -118,7 +96,7 @@ namespace NuGet.Commands.Test
                     }
                 });
 
-                targetGroups.Add(new MSBuildRestoreImportGroup()
+                targetGroups.Add(new MSBuildRestoreItemGroup()
                 {
                     Conditions = new List<string>()
                     {
@@ -126,11 +104,12 @@ namespace NuGet.Commands.Test
                     }
                 });
 
-                targetGroups.Add(new MSBuildRestoreImportGroup()
+                targetGroups.Add(new MSBuildRestoreItemGroup()
                 {
-                    Imports = new List<string>()
+                    Items = new List<XElement>()
                     {
-                         "x.targets", "y.targets"
+                        BuildAssetsUtils.GenerateImport("x.targets"),
+                        BuildAssetsUtils.GenerateImport("y.targets")
                     },
                     Conditions = new List<string>()
                     {
@@ -139,11 +118,12 @@ namespace NuGet.Commands.Test
                     Position = 0,
                 });
 
-                propGroups.Add(new MSBuildRestoreImportGroup()
+                propGroups.Add(new MSBuildRestoreItemGroup()
                 {
-                    Imports = new List<string>()
+                    Items = new List<XElement>()
                     {
-                        "a.props", "b.props"
+                        BuildAssetsUtils.GenerateImport("a.props"),
+                        BuildAssetsUtils.GenerateImport("b.props")
                     },
                     Conditions = new List<string>()
                     {
@@ -151,11 +131,11 @@ namespace NuGet.Commands.Test
                     }
                 });
 
-                propGroups.Add(new MSBuildRestoreImportGroup()
+                propGroups.Add(new MSBuildRestoreItemGroup()
                 {
-                    Imports = new List<string>()
+                    Items = new List<XElement>()
                     {
-                        "c.props"
+                        BuildAssetsUtils.GenerateImport("c.props")
                     },
                     Conditions = new List<string>()
                     {
@@ -163,7 +143,7 @@ namespace NuGet.Commands.Test
                     }
                 });
 
-                propGroups.Add(new MSBuildRestoreImportGroup()
+                propGroups.Add(new MSBuildRestoreItemGroup()
                 {
                     Conditions = new List<string>()
                     {
@@ -171,7 +151,7 @@ namespace NuGet.Commands.Test
                     }
                 });
 
-                propGroups.Add(new MSBuildRestoreImportGroup()
+                propGroups.Add(new MSBuildRestoreItemGroup()
                 {
                     Conditions = new List<string>()
                     {
@@ -179,11 +159,11 @@ namespace NuGet.Commands.Test
                     }
                 });
 
-                propGroups.Add(new MSBuildRestoreImportGroup()
+                propGroups.Add(new MSBuildRestoreItemGroup()
                 {
-                    Imports = new List<string>()
+                    Items = new List<XElement>()
                     {
-                         "z.props"
+                        BuildAssetsUtils.GenerateImport("z.props")
                     },
                     Conditions = new List<string>()
                     {
@@ -192,23 +172,20 @@ namespace NuGet.Commands.Test
                     Position = 0,
                 });
 
-                var msBuildRestoreResult = new MSBuildRestoreResult(
-                  targetsPath,
-                  propsPath,
-                  globalPackagesFolder,
-                  propGroups,
-                  targetGroups);
-
                 // Act
-                msBuildRestoreResult.Commit(Common.NullLogger.Instance);
+                var targetsXML = BuildAssetsUtils.GenerateMSBuildFile(
+                    targetGroups,
+                    globalPackagesFolder,
+                    RestoreOutputType.NETCore,
+                    success: true);
+
+                var propsXML = BuildAssetsUtils.GenerateMSBuildFile(
+                    propGroups,
+                    globalPackagesFolder,
+                    RestoreOutputType.NETCore,
+                    success: true);
 
                 // Assert
-                Assert.True(File.Exists(targetsPath));
-                var targetsXML = XDocument.Load(targetsPath);
-
-                Assert.True(File.Exists(propsPath));
-                var propsXML = XDocument.Load(propsPath);
-
                 var targetItemGroups = targetsXML.Root.Elements().Where(e => e.Name.LocalName == "ImportGroup").ToList();
                 var propsItemGroups = propsXML.Root.Elements().Where(e => e.Name.LocalName == "ImportGroup").ToList();
 
@@ -237,89 +214,7 @@ namespace NuGet.Commands.Test
         }
 
         [Fact]
-        public void MSBuildRestoreResult_MultipleTFMs_CrossTargeting_EmptyGroups()
-        {
-            // Arrange
-            using (var globalPackagesFolder = TestDirectory.Create())
-            using (var randomProjectDirectory = TestDirectory.Create())
-            {
-                var projectName = "testproject";
-
-                var targetsName = $"{projectName}.nuget.g.targets";
-                var targetsPath = Path.Combine(randomProjectDirectory, targetsName);
-
-                var propsName = $"{projectName}.nuget.g.props";
-                var propsPath = Path.Combine(randomProjectDirectory, propsName);
-
-                var props = new List<MSBuildRestoreImportGroup>();
-                var targets = new List<MSBuildRestoreImportGroup>();
-
-                props.Add(new MSBuildRestoreImportGroup()
-                {
-                    Conditions = new List<string>()
-                    {
-                        "'$(TargetFramework)' == 'net45'"
-                    }
-                });
-
-                props.Add(new MSBuildRestoreImportGroup()
-                {
-                    Conditions = new List<string>()
-                    {
-                        "'$(TargetFramework)' == 'netStandard1.7'"
-                    }
-                });
-
-                props.Add(new MSBuildRestoreImportGroup()
-                {
-                    Conditions = new List<string>()
-                    {
-                        "'$(TargetFramework)' == ''"
-                    }
-                });
-
-                targets.Add(new MSBuildRestoreImportGroup()
-                {
-                    Conditions = new List<string>()
-                    {
-                        "'$(TargetFramework)' == 'net45'"
-                    }
-                });
-
-                targets.Add(new MSBuildRestoreImportGroup()
-                {
-                    Conditions = new List<string>()
-                    {
-                        "'$(TargetFramework)' == 'netStandard1.7'"
-                    }
-                });
-
-                targets.Add(new MSBuildRestoreImportGroup()
-                {
-                    Conditions = new List<string>()
-                    {
-                        "'$(TargetFramework)' == ''"
-                    }
-                });
-
-                var msBuildRestoreResult = new MSBuildRestoreResult(
-                  targetsPath,
-                  propsPath,
-                  globalPackagesFolder,
-                  props,
-                  targets);
-
-                // Act
-                msBuildRestoreResult.Commit(Common.NullLogger.Instance);
-
-                // Assert
-                Assert.False(File.Exists(targetsPath));
-                Assert.False(File.Exists(propsPath));
-            }
-        }
-
-        [Fact]
-        public void MSBuildRestoreResult_MultipleTFMs()
+        public void BuildAssetsUtils_MultipleTFMs()
         {
             // Arrange
             using (var globalPackagesFolder = TestDirectory.Create())
@@ -336,98 +231,50 @@ namespace NuGet.Commands.Test
                 var propsName = $"{projectName}.nuget.g.props";
                 var propsPath = Path.Combine(randomProjectDirectory, propsName);
 
-                var props = new List<MSBuildRestoreImportGroup>();
-                var targets = new List<MSBuildRestoreImportGroup>();
+                var props = new List<MSBuildRestoreItemGroup>();
+                var targets = new List<MSBuildRestoreItemGroup>();
 
-                targets.Add(new MSBuildRestoreImportGroup()
+                targets.Add(new MSBuildRestoreItemGroup()
                 {
                     Conditions = new List<string>()
                     {
                         "'$(TargetFramework)' == 'net45'"
                     },
-                    Imports = new List<string>()
+                    Items = new List<XElement>()
                     {
-                        "a.targets", "b.targets"
-                    }
+                        BuildAssetsUtils.GenerateImport("a.targets"),
+                        BuildAssetsUtils.GenerateImport("b.targets")
+                    },
                 });
 
-                targets.Add(new MSBuildRestoreImportGroup()
+                targets.Add(new MSBuildRestoreItemGroup()
                 {
                     Conditions = new List<string>()
                     {
                         "'$(TargetFramework)' == 'netstandard16'"
                     },
-                    Imports = new List<string>()
+                    Items = new List<XElement>()
                     {
-                        "c.targets"
-                    }
+                        BuildAssetsUtils.GenerateImport("c.targets")
+                    },
                 });
 
-                targets.Add(new MSBuildRestoreImportGroup()
+                targets.Add(new MSBuildRestoreItemGroup()
                 {
                     Conditions = new List<string>()
                     {
                         "'$(TargetFramework)' == 'netStandard1.7'"
                     }
                 });
-
-                props.Add(new MSBuildRestoreImportGroup()
-                {
-                    Conditions = new List<string>()
-                    {
-                        "'$(TargetFramework)' == 'net45'"
-                    },
-                    Imports = new List<string>()
-                    {
-                        "a.props", "b.props"
-                    }
-                });
-
-                props.Add(new MSBuildRestoreImportGroup()
-                {
-                    Conditions = new List<string>()
-                    {
-                        "'$(TargetFramework)' == 'netstandard16'"
-                    },
-                    Imports = new List<string>()
-                    {
-                        "c.props"
-                    }
-                });
-
-                props.Add(new MSBuildRestoreImportGroup()
-                {
-                    Conditions = new List<string>()
-                    {
-                        "'$(TargetFramework)' == 'netStandard1.7'"
-                    }
-                });
-
-                props.Add(new MSBuildRestoreImportGroup()
-                {
-                    Conditions = new List<string>()
-                    {
-                        "'$(TargetFramework)' == 'netStandard1.8'"
-                    }
-                });
-
-                var msBuildRestoreResult = new MSBuildRestoreResult(
-                  targetsPath,
-                  propsPath,
-                  globalPackagesFolder,
-                  props,
-                  targets);
 
                 // Act
-                msBuildRestoreResult.Commit(Common.NullLogger.Instance);
+                var targetsXML = BuildAssetsUtils.GenerateMSBuildFile(
+                    targets,
+                    globalPackagesFolder,
+                    RestoreOutputType.NETCore,
+                    success: true);
 
                 // Assert
-                Assert.True(File.Exists(targetsPath));
-                var targetsXML = XDocument.Load(targetsPath);
-
-                Assert.True(File.Exists(propsPath));
-                var propsXML = XDocument.Load(propsPath);
-
                 var targetItemGroups = targetsXML.Root.Elements().Where(e => e.Name.LocalName == "ImportGroup").ToList();
 
                 Assert.Equal(2, targetItemGroups.Count);
@@ -444,41 +291,51 @@ namespace NuGet.Commands.Test
         }
 
         [Fact]
-        public void MSBuildRestoreResult_EmptyResult()
+        public void BuildAssetsUtils_NETCoreWithNoItemsStillGeneratesFile()
         {
             // Arrange
             using (var globalPackagesFolder = TestDirectory.Create())
             using (var randomProjectDirectory = TestDirectory.Create())
             {
-                var projectName = "testproject";
-
-                var targetsName = $"{projectName}.nuget.g.targets";
-                var targetsPath = Path.Combine(randomProjectDirectory, targetsName);
-
-                var propsName = $"{projectName}.nuget.g.props";
-                var propsPath = Path.Combine(randomProjectDirectory, propsName);
-
-                var props = new List<MSBuildRestoreImportGroup>();
-                var targets = new List<MSBuildRestoreImportGroup>();
-
-                var msBuildRestoreResult = new MSBuildRestoreResult(
-                  targetsPath,
-                  propsPath,
-                  globalPackagesFolder,
-                  props,
-                  targets);
+                var props = new List<MSBuildRestoreItemGroup>();
+                var targets = new List<MSBuildRestoreItemGroup>();
 
                 // Act
-                msBuildRestoreResult.Commit(Common.NullLogger.Instance);
+                var xml = BuildAssetsUtils.GenerateMSBuildFile(
+                    targets,
+                    globalPackagesFolder,
+                    RestoreOutputType.NETCore,
+                    success: true);
 
                 // Assert
-                Assert.False(File.Exists(targetsPath));
-                Assert.False(File.Exists(propsPath));
+                Assert.NotNull(xml);
             }
         }
 
         [Fact]
-        public void MSBuildRestoreResult_SingleTFM()
+        public void BuildAssetsUtils_ProjcetJsonWithNoItemsDoesNotGenerateFile()
+        {
+            // Arrange
+            using (var globalPackagesFolder = TestDirectory.Create())
+            using (var randomProjectDirectory = TestDirectory.Create())
+            {
+                var props = new List<MSBuildRestoreItemGroup>();
+                var targets = new List<MSBuildRestoreItemGroup>();
+
+                // Act
+                var xml = BuildAssetsUtils.GenerateMSBuildFile(
+                    targets,
+                    globalPackagesFolder,
+                    RestoreOutputType.UAP,
+                    success: true);
+
+                // Assert
+                Assert.Null(xml);
+            }
+        }
+
+        [Fact]
+        public void BuildAssetsUtils_SingleTFM()
         {
             // Arrange
             using (var globalPackagesFolder = TestDirectory.Create())
@@ -495,51 +352,44 @@ namespace NuGet.Commands.Test
                 var propsName = $"{projectName}.nuget.g.props";
                 var propsPath = Path.Combine(randomProjectDirectory, propsName);
 
-                var props = new List<MSBuildRestoreImportGroup>();
-                var targets = new List<MSBuildRestoreImportGroup>();
+                var props = new List<MSBuildRestoreItemGroup>();
+                var targets = new List<MSBuildRestoreItemGroup>();
 
-                targets.Add(new MSBuildRestoreImportGroup()
+                targets.Add(new MSBuildRestoreItemGroup()
                 {
                     Conditions = new List<string>()
                     {
                         "'$(TargetFramework)' == 'net45'"
                     },
-                    Imports = new List<string>()
+                    Items = new List<XElement>()
                     {
-                        "a.targets", "b.targets"
-                    }
+                        BuildAssetsUtils.GenerateImport("a.targets"),
+                        BuildAssetsUtils.GenerateImport("b.targets")
+                    },
                 });
 
-                props.Add(new MSBuildRestoreImportGroup()
+                props.Add(new MSBuildRestoreItemGroup()
                 {
                     Conditions = new List<string>()
                     {
                         "'$(TargetFramework)' == 'net45'"
                     },
-                    Imports = new List<string>()
+                    Items = new List<XElement>()
                     {
-                        "a.props", "b.props"
-                    }
+                        BuildAssetsUtils.GenerateImport("a.props"),
+                        BuildAssetsUtils.GenerateImport("b.props")
+                    },
                 });
-
-                var msBuildRestoreResult = new MSBuildRestoreResult(
-                  targetsPath,
-                  propsPath,
-                  globalPackagesFolder,
-                  props,
-                  targets);
 
                 // Act
-                msBuildRestoreResult.Commit(Common.NullLogger.Instance);
+                var xml = BuildAssetsUtils.GenerateMSBuildFile(
+                    targets,
+                    globalPackagesFolder,
+                    RestoreOutputType.NETCore,
+                    success: true);
 
                 // Assert
-                Assert.True(File.Exists(targetsPath));
-                var targetsXML = XDocument.Load(targetsPath);
-
-                Assert.True(File.Exists(propsPath));
-                var propsXML = XDocument.Load(propsPath);
-
-                var targetItemGroups = targetsXML.Root.Elements().Where(e => e.Name.LocalName == "ImportGroup").ToList();
+                var targetItemGroups = xml.Root.Elements().Where(e => e.Name.LocalName == "ImportGroup").ToList();
 
                 Assert.Equal(1, targetItemGroups.Count);
                 Assert.Equal("'$(TargetFramework)' == 'net45'", targetItemGroups[0].Attribute(XName.Get("Condition")).Value.Trim());
@@ -550,60 +400,45 @@ namespace NuGet.Commands.Test
         }
 
         [Fact]
-        public void MSBuildRestoreResult_SingleTFM_NoConditionals()
+        public void BuildAssetsUtils_SingleTFM_NoConditionals()
         {
             // Arrange
             using (var globalPackagesFolder = TestDirectory.Create())
             using (var randomProjectDirectory = TestDirectory.Create())
             {
-                var projectName = "testproject";
-
                 // Only run the test if globalPackagesFolder can be determined
                 // Because, globalPackagesFolder would be null if %USERPROFILE% was null
 
-                var targetsName = $"{projectName}.nuget.g.targets";
-                var targetsPath = Path.Combine(randomProjectDirectory, targetsName);
+                var props = new List<MSBuildRestoreItemGroup>();
+                var targets = new List<MSBuildRestoreItemGroup>();
 
-                var propsName = $"{projectName}.nuget.g.props";
-                var propsPath = Path.Combine(randomProjectDirectory, propsName);
-
-                var props = new List<MSBuildRestoreImportGroup>();
-                var targets = new List<MSBuildRestoreImportGroup>();
-
-                targets.Add(new MSBuildRestoreImportGroup()
+                targets.Add(new MSBuildRestoreItemGroup()
                 {
-                    Imports = new List<string>()
+                    Items = new List<XElement>()
                     {
-                        "a.targets", "b.targets"
-                    }
+                        BuildAssetsUtils.GenerateImport("a.targets"),
+                        BuildAssetsUtils.GenerateImport("b.targets")
+                    },
                 });
 
-                props.Add(new MSBuildRestoreImportGroup()
+                props.Add(new MSBuildRestoreItemGroup()
                 {
-                    Imports = new List<string>()
+                    Items = new List<XElement>()
                     {
-                        "a.props", "b.props"
-                    }
+                        BuildAssetsUtils.GenerateImport("a.props"),
+                        BuildAssetsUtils.GenerateImport("b.props")
+                    },
                 });
-
-                var msBuildRestoreResult = new MSBuildRestoreResult(
-                  targetsPath,
-                  propsPath,
-                  globalPackagesFolder,
-                  props,
-                  targets);
 
                 // Act
-                msBuildRestoreResult.Commit(Common.NullLogger.Instance);
+                var xml = BuildAssetsUtils.GenerateMSBuildFile(
+                    targets,
+                    globalPackagesFolder,
+                    RestoreOutputType.UAP,
+                    success: true);
 
                 // Assert
-                Assert.True(File.Exists(targetsPath));
-                var targetsXML = XDocument.Load(targetsPath);
-
-                Assert.True(File.Exists(propsPath));
-                var propsXML = XDocument.Load(propsPath);
-
-                var targetItemGroups = targetsXML.Root.Elements().Where(e => e.Name.LocalName == "ImportGroup").ToList();
+                var targetItemGroups = xml.Root.Elements().Where(e => e.Name.LocalName == "ImportGroup").ToList();
 
                 Assert.Equal(1, targetItemGroups.Count);
                 Assert.Equal(0, targetItemGroups[0].Attributes().Count());
@@ -614,7 +449,7 @@ namespace NuGet.Commands.Test
         }
 
         [Fact]
-        public void MSBuildRestoreResult_VerifyPositionAndSortOrder()
+        public void BuildAssetsUtils_VerifyPositionAndSortOrder()
         {
             // Arrange
             using (var globalPackagesFolder = TestDirectory.Create())
@@ -627,75 +462,70 @@ namespace NuGet.Commands.Test
                 var propsName = $"{projectName}.nuget.g.props";
                 var propsPath = Path.Combine(randomProjectDirectory, propsName);
 
-                var props = new List<MSBuildRestoreImportGroup>();
-                var targets = new List<MSBuildRestoreImportGroup>();
+                var props = new List<MSBuildRestoreItemGroup>();
+                var targets = new List<MSBuildRestoreItemGroup>();
 
-                targets.Add(new MSBuildRestoreImportGroup()
+                targets.Add(new MSBuildRestoreItemGroup()
                 {
                     Conditions = new List<string>()
                     {
                         "b"
                     },
-                    Imports = new List<string>()
+                    Items = new List<XElement>()
                     {
-                        "a.targets"
+                        BuildAssetsUtils.GenerateImport("a.targets")
                     },
                     Position = 0
                 });
 
-                targets.Add(new MSBuildRestoreImportGroup()
+                targets.Add(new MSBuildRestoreItemGroup()
                 {
                     Conditions = new List<string>()
                     {
                         "a"
                     },
-                    Imports = new List<string>()
+                    Items = new List<XElement>()
                     {
-                        "a.targets"
+                        BuildAssetsUtils.GenerateImport("a.targets")
                     },
                     Position = 0
                 });
 
-                targets.Add(new MSBuildRestoreImportGroup()
+                targets.Add(new MSBuildRestoreItemGroup()
                 {
                     Conditions = new List<string>()
                     {
                         "z"
                     },
-                    Imports = new List<string>()
+                    Items = new List<XElement>()
                     {
-                        "a.targets"
+                        BuildAssetsUtils.GenerateImport("a.targets")
                     },
                     Position = -1
                 });
 
-                targets.Add(new MSBuildRestoreImportGroup()
+                targets.Add(new MSBuildRestoreItemGroup()
                 {
                     Conditions = new List<string>()
                     {
                         "x"
                     },
-                    Imports = new List<string>()
+                    Items = new List<XElement>()
                     {
-                        "a.targets"
+                        BuildAssetsUtils.GenerateImport("a.targets")
                     },
                     Position = 100
                 });
 
-                var msBuildRestoreResult = new MSBuildRestoreResult(
-                  targetsPath,
-                  propsPath,
-                  globalPackagesFolder,
-                  props,
-                  targets);
-
                 // Act
-                msBuildRestoreResult.Commit(Common.NullLogger.Instance);
+                var xml = BuildAssetsUtils.GenerateMSBuildFile(
+                    targets,
+                    globalPackagesFolder,
+                    RestoreOutputType.UAP,
+                    success: true);
 
                 // Assert
-                Assert.True(File.Exists(targetsPath));
-                var targetsXML = XDocument.Load(targetsPath);
-                var targetItemGroups = targetsXML.Root.Elements().Where(e => e.Name.LocalName == "ImportGroup").ToList();
+                var targetItemGroups = xml.Root.Elements().Where(e => e.Name.LocalName == "ImportGroup").ToList();
 
                 Assert.Equal(4, targetItemGroups.Count);
                 Assert.Equal("z", targetItemGroups[0].Attribute(XName.Get("Condition")).Value.Trim());

@@ -56,7 +56,7 @@ namespace NuGet.PackageManagement.VisualStudio
         {
             get
             {
-                EnsureCacheInitialized();
+                EnsureInitialize();
 
                 if (string.IsNullOrEmpty(DefaultNuGetProjectName))
                 {
@@ -173,7 +173,7 @@ namespace NuGet.PackageManagement.VisualStudio
                     nameof(nuGetProjectSafeName));
             }
 
-            EnsureCacheInitialized();
+            EnsureInitialize();
 
             NuGetProject nuGetProject = null;
             // Project system cache could be null when solution is not open.
@@ -194,7 +194,7 @@ namespace NuGet.PackageManagement.VisualStudio
                 throw new ArgumentNullException("nuGetProject");
             }
 
-            EnsureCacheInitialized();
+            EnsureInitialize();
 
             // Try searching for simple names first
             string name = nuGetProject.GetMetadata<string>(NuGetProjectMetadataKeys.Name);
@@ -213,7 +213,7 @@ namespace NuGet.PackageManagement.VisualStudio
                 throw new ArgumentException(ProjectManagement.Strings.Argument_Cannot_Be_Null_Or_Empty, "nuGetProjectSafeName");
             }
 
-            EnsureCacheInitialized();
+            EnsureInitialize();
 
             EnvDTE.Project dteProject;
             _projectSystemCache.TryGetDTEProject(nuGetProjectSafeName, out dteProject);
@@ -222,7 +222,7 @@ namespace NuGet.PackageManagement.VisualStudio
 
         public IEnumerable<NuGetProject> GetNuGetProjects()
         {
-            EnsureCacheInitialized();
+            EnsureInitialize();
 
             var projects = _projectSystemCache.GetNuGetProjects();
 
@@ -243,7 +243,7 @@ namespace NuGet.PackageManagement.VisualStudio
         {
             Debug.Assert(ThreadHelper.CheckAccess());
 
-            EnsureCacheInitialized();
+            EnsureInitialize();
 
             var dteProjects = _projectSystemCache.GetEnvDTEProjects();
 
@@ -284,7 +284,7 @@ namespace NuGet.PackageManagement.VisualStudio
                         return false;
                     }
 
-                    EnsureCacheInitialized();
+                    EnsureInitialize();
 
                     if (!DoesSolutionRequireAnInitialSaveAs())
                     {
@@ -323,7 +323,7 @@ namespace NuGet.PackageManagement.VisualStudio
                 {
                     await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
-                    EnsureCacheInitialized();
+                    EnsureInitialize();
                     var vsSolution7 = _vsSolution as IVsSolution7;
 
                     if (vsSolution7 != null && vsSolution7.IsSolutionLoadDeferred())
@@ -345,7 +345,7 @@ namespace NuGet.PackageManagement.VisualStudio
                 {
                     await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
-                    EnsureCacheInitialized();
+                    EnsureInitialize();
                     object value;
                     _vsSolution.GetProperty((int)(__VSPROPID4.VSPROPID_IsSolutionFullyLoaded), out value);
                     return (bool)value;
@@ -359,7 +359,7 @@ namespace NuGet.PackageManagement.VisualStudio
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
-                EnsureCacheInitialized();
+                EnsureInitialize();
                 var vsSolution4 = _vsSolution as IVsSolution4;
 
                 if (vsSolution4 != null)
@@ -728,7 +728,7 @@ namespace NuGet.PackageManagement.VisualStudio
             }
         }
 
-        private void EnsureCacheInitialized()
+        private void EnsureInitialize()
         {
             try
             {
@@ -817,7 +817,7 @@ namespace NuGet.PackageManagement.VisualStudio
             // large number of references.
             await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
-            EnsureCacheInitialized();
+            EnsureInitialize();
 
             var dependentEnvDTEProjectsDictionary = new Dictionary<string, List<Project>>();
             var envDTEProjects = GetEnvDTEProjects();

@@ -38,7 +38,7 @@ namespace NuGet.PackageManagement.VisualStudio
         private Lazy<BlockingCollection<SolutionRestoreRequest>> _pendingRequests;
         private BackgroundRestoreOperation _pendingRestore;
         private Task<bool> _activeRestoreTask;
-        private bool _initialized;
+        private int _initialized;
 
         private SolutionRestoreJobContext _restoreJobContext;
 
@@ -94,9 +94,8 @@ namespace NuGet.PackageManagement.VisualStudio
 
         private async Task InitializeAsync()
         {
-            if (!_initialized)
+            if (Interlocked.CompareExchange(ref _initialized, 1, 0) == 0)
             {
-                _initialized = true;
                 await _joinableFactory.RunAsync(async () =>
                 {
                     await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();

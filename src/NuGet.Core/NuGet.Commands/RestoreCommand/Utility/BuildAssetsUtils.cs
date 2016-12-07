@@ -3,15 +3,12 @@
 
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Xml.Linq;
-using NuGet.Client;
 using NuGet.Common;
-using NuGet.ContentModel;
 using NuGet.DependencyResolver;
 using NuGet.Frameworks;
 using NuGet.LibraryModel;
@@ -245,7 +242,7 @@ namespace NuGet.Commands
                     .OrderBy(e => e.Position)
                     .ThenBy(e => e.Condition, StringComparer.OrdinalIgnoreCase))
                 {
-                    var itemGroup = new XElement(Namespace + "ImportGroup", group.Items);
+                    var itemGroup = new XElement(Namespace + group.RootName, group.Items);
 
                     // Add a conditional statement if multiple TFMs exist or cross targeting is present
                     var conditionValue = group.Condition;
@@ -412,7 +409,7 @@ namespace NuGet.Commands
                     string.IsNullOrEmpty(e.RuntimeIdentifier)
                     && ridlessTarget.TargetFramework == e.Framework);
 
-                // Sort by dependency order, child package assets should appear higher in the 
+                // Sort by dependency order, child package assets should appear higher in the
                 // msbuild targets and props files so that parents can depend on them.
                 var sortedGraph = TopologicalSortUtility.SortPackagesByDependencyOrder(ConvertToPackageDependencyInfo(targetGraph.Flattened));
 
@@ -440,6 +437,7 @@ namespace NuGet.Commands
 
                 // build/ {packageId}.targets
                 var buildTargetsGroup = new MSBuildRestoreItemGroup();
+                buildTargetsGroup.RootName = MSBuildRestoreItemGroup.ImportGroup;
                 buildTargetsGroup.Position = 2;
 
                 buildTargetsGroup.Items.AddRange(sortedPackages.SelectMany(pkg =>
@@ -452,6 +450,7 @@ namespace NuGet.Commands
 
                 // props/ {packageId}.props
                 var buildPropsGroup = new MSBuildRestoreItemGroup();
+                buildPropsGroup.RootName = MSBuildRestoreItemGroup.ImportGroup;
                 buildPropsGroup.Position = 2;
 
                 buildPropsGroup.Items.AddRange(sortedPackages.SelectMany(pkg =>
@@ -466,6 +465,7 @@ namespace NuGet.Commands
                 {
                     // buildCrossTargeting/ {packageId}.targets
                     var buildCrossTargetsGroup = new MSBuildRestoreItemGroup();
+                    buildCrossTargetsGroup.RootName = MSBuildRestoreItemGroup.ImportGroup;
                     buildCrossTargetsGroup.Position = 0;
 
                     buildCrossTargetsGroup.Items.AddRange(sortedPackages.SelectMany(pkg =>
@@ -478,6 +478,7 @@ namespace NuGet.Commands
 
                     // buildCrossTargeting/ {packageId}.props
                     var buildCrossPropsGroup = new MSBuildRestoreItemGroup();
+                    buildCrossPropsGroup.RootName = MSBuildRestoreItemGroup.ImportGroup;
                     buildCrossPropsGroup.Position = 0;
 
                     buildCrossPropsGroup.Items.AddRange(sortedPackages.SelectMany(pkg =>
@@ -510,6 +511,7 @@ namespace NuGet.Commands
                                 .GetLanguageGroups(allLanguages))
                         .GroupBy(e => e.Key, e => e.Value)
                         .Select(group => MSBuildRestoreItemGroup.Create(
+                            rootName: MSBuildRestoreItemGroup.ItemGroup,
                             items: group.SelectMany(e => e)
                                         .Where(e => !e.Key.Path.EndsWith(PackagingCoreConstants.ForwardSlashEmptyFolder))
                                         .Select(e => GenerateContentFilesItem(e.Value, e.Key)),
@@ -542,6 +544,7 @@ namespace NuGet.Commands
         {
             if (PackagingConstants.AnyCodeLanguage.Equals(language, StringComparison.OrdinalIgnoreCase))
             {
+                // Must not be any of the other package languages.
                 foreach (var lang in allLanguages)
                 {
                     yield return string.Format(CultureInfo.InvariantCulture, NegativeLanguageCondition, language);
@@ -549,6 +552,7 @@ namespace NuGet.Commands
             }
             else
             {
+                // Must be the language.
                 yield return string.Format(CultureInfo.InvariantCulture, LanguageCondition, language);
             }
         }
@@ -596,6 +600,7 @@ namespace NuGet.Commands
             {
                 yield return new MSBuildRestoreItemGroup()
                 {
+                    RootName = original.RootName,
                     Position = original.Position,
                     Items = original.Items,
                     Conditions = original.Conditions.Concat(new[] { condition }).ToList()

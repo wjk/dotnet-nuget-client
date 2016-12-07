@@ -179,7 +179,7 @@ namespace NuGet.Commands
                 contentItems,
                 targetGraph.Conventions.Patterns.MSBuildFiles);
 
-            lockFileLib.Build.AddRange(buildGroup);
+            lockFileLib.Build.AddRange(GetBuildItemsForPackageId(buildGroup, library.Name));
 
             // Build cross targeting
             var buildCrossTargetingGroup = GetLockFileItems(
@@ -187,7 +187,7 @@ namespace NuGet.Commands
                 contentItems,
                 targetGraph.Conventions.Patterns.MSBuildCrossTargetingFiles);
 
-            lockFileLib.BuildCrossTargeting.AddRange(buildCrossTargetingGroup);
+            lockFileLib.BuildCrossTargeting.AddRange(GetBuildItemsForPackageId(buildCrossTargetingGroup, library.Name));
 
             // content v2 items
             var contentFileGroups = contentItems.FindItemGroups(targetGraph.Conventions.Patterns.ContentFiles);
@@ -336,6 +336,40 @@ namespace NuGet.Commands
             }
 
             yield break;
+        }
+
+        /// <summary>
+        /// Get packageId.targets and packageId.props
+        /// </summary>
+        private static IEnumerable<LockFileItem> GetBuildItemsForPackageId(
+            IEnumerable<LockFileItem> items,
+            string packageId)
+        {
+            if (items.Any())
+            {
+                var ordered = items.OrderBy(c => c.Path, StringComparer.OrdinalIgnoreCase)
+                                   .ToArray();
+
+                var props = ordered.FirstOrDefault(c =>
+                    $"{packageId}.props".Equals(
+                        Path.GetFileName(c.Path),
+                        StringComparison.OrdinalIgnoreCase));
+
+                if (props != null)
+                {
+                    yield return props;
+                }
+
+                var targets = ordered.FirstOrDefault(c => 
+                    $"{packageId}.targets".Equals(
+                        Path.GetFileName(c.Path),
+                        StringComparison.OrdinalIgnoreCase));
+
+                if (targets != null)
+                {
+                    yield return targets;
+                }
+            }
         }
 
         /// <summary>

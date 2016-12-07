@@ -9,6 +9,9 @@ namespace NuGet.Commands
 {
     public class MSBuildRestoreItemGroup
     {
+        public static readonly string ItemGroup = nameof(ItemGroup);
+        public static readonly string ImportGroup = nameof(ImportGroup);
+
         /// <summary>
         /// Optional position arguement used when ordering groups in the output file.
         /// </summary>
@@ -23,6 +26,11 @@ namespace NuGet.Commands
         /// Items or imports.
         /// </summary>
         public List<XElement> Items { get; set; } = new List<XElement>();
+
+        /// <summary>
+        /// Root element name.
+        /// </summary>
+        public string RootName { get; set; } = ImportGroup;
 
         /// <summary>
         /// Combined conditions
@@ -43,12 +51,14 @@ namespace NuGet.Commands
         }
 
         public static MSBuildRestoreItemGroup Create(
+            string rootName,
             IEnumerable<XElement> items,
             int position,
             IEnumerable<string> conditions)
         {
             var group = new MSBuildRestoreItemGroup();
 
+            group.RootName = rootName;
             group.Items.AddRange(items);
             group.Position = position;
             group.Conditions.AddRange(conditions);

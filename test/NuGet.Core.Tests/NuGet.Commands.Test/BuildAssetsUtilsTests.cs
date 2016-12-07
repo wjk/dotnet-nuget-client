@@ -8,6 +8,7 @@ using System.Linq;
 using System.Xml.Linq;
 using NuGet.Common;
 using NuGet.Configuration;
+using NuGet.Frameworks;
 using NuGet.ProjectModel;
 using NuGet.Test.Utility;
 using Xunit;
@@ -60,14 +61,6 @@ namespace NuGet.Commands.Test
             using (var globalPackagesFolder = TestDirectory.Create())
             using (var randomProjectDirectory = TestDirectory.Create())
             {
-                var projectName = "testproject";
-
-                var targetsName = $"{projectName}.nuget.g.targets";
-                var targetsPath = Path.Combine(randomProjectDirectory, targetsName);
-
-                var propsName = $"{projectName}.nuget.g.props";
-                var propsPath = Path.Combine(randomProjectDirectory, propsName);
-
                 var propGroups = new List<MSBuildRestoreItemGroup>();
                 var targetGroups = new List<MSBuildRestoreItemGroup>();
 
@@ -220,17 +213,6 @@ namespace NuGet.Commands.Test
             using (var globalPackagesFolder = TestDirectory.Create())
             using (var randomProjectDirectory = TestDirectory.Create())
             {
-                var projectName = "testproject";
-
-                // Only run the test if globalPackagesFolder can be determined
-                // Because, globalPackagesFolder would be null if %USERPROFILE% was null
-
-                var targetsName = $"{projectName}.nuget.g.targets";
-                var targetsPath = Path.Combine(randomProjectDirectory, targetsName);
-
-                var propsName = $"{projectName}.nuget.g.props";
-                var propsPath = Path.Combine(randomProjectDirectory, propsName);
-
                 var props = new List<MSBuildRestoreItemGroup>();
                 var targets = new List<MSBuildRestoreItemGroup>();
 
@@ -341,17 +323,6 @@ namespace NuGet.Commands.Test
             using (var globalPackagesFolder = TestDirectory.Create())
             using (var randomProjectDirectory = TestDirectory.Create())
             {
-                var projectName = "testproject";
-
-                // Only run the test if globalPackagesFolder can be determined
-                // Because, globalPackagesFolder would be null if %USERPROFILE% was null
-
-                var targetsName = $"{projectName}.nuget.g.targets";
-                var targetsPath = Path.Combine(randomProjectDirectory, targetsName);
-
-                var propsName = $"{projectName}.nuget.g.props";
-                var propsPath = Path.Combine(randomProjectDirectory, propsName);
-
                 var props = new List<MSBuildRestoreItemGroup>();
                 var targets = new List<MSBuildRestoreItemGroup>();
 
@@ -455,13 +426,6 @@ namespace NuGet.Commands.Test
             using (var globalPackagesFolder = TestDirectory.Create())
             using (var randomProjectDirectory = TestDirectory.Create())
             {
-                var projectName = "testproject";
-                var targetsName = $"{projectName}.nuget.g.targets";
-                var targetsPath = Path.Combine(randomProjectDirectory, targetsName);
-
-                var propsName = $"{projectName}.nuget.g.props";
-                var propsPath = Path.Combine(randomProjectDirectory, propsName);
-
                 var props = new List<MSBuildRestoreItemGroup>();
                 var targets = new List<MSBuildRestoreItemGroup>();
 

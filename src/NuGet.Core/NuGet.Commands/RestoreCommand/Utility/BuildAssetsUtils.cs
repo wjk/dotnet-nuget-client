@@ -494,31 +494,16 @@ namespace NuGet.Commands
                 // for UAP with project.json.
                 if (request.RestoreOutputType != RestoreOutputType.UAP)
                 {
-                    // contentFiles/
-                    var allLanguages = new SortedSet<string>(
-                            sortedPackages.SelectMany(pkg =>
-                                pkg.Key.ContentFiles.Select(item => item.CodeLanguage)),
-                            StringComparer.OrdinalIgnoreCase);
-
                     // Create a group for every package, with the nearest from each of allLanguages
-                    props.AddRange(sortedPackages.SelectMany(pkg =>
+                    props.AddRange(sortedPackages.Select(pkg =>
                          pkg.Key.ContentFiles
                                 .OrderBy(e => e.Path, StringComparer.Ordinal)
                                 .Select(e =>
                                     new KeyValuePair<LockFileContentFile, string>(
                                         key: e,
-                                        value: pkg.Value.GetAbsolutePath(GetImportPath(e.Path, repositoryRoot))))
-                                .GetLanguageGroups(allLanguages))
-                        .GroupBy(e => e.Key, e => e.Value)
-                        .Select(group => MSBuildRestoreItemGroup.Create(
-                            rootName: MSBuildRestoreItemGroup.ItemGroup,
-                            items: group.SelectMany(e => e)
-                                        .Where(e => !e.Key.Path.EndsWith(PackagingCoreConstants.ForwardSlashEmptyFolder))
-                                        .Select(e => GenerateContentFilesItem(e.Value, e.Key)),
-                            position: 1,
-                            conditions: GetLanguageConditions(group.Key, allLanguages)))
-                        .Where(group => group.Items.Count > 0)
-                        .SelectMany(group => GetGroupsWithConditions(group, isCrossTargeting, frameworkConditions)));
+                                        value: pkg.Value.GetAbsolutePath(GetImportPath(e.Path, repositoryRoot)))))
+                         .SelectMany(e => GetLanguageGroups(e))
+                         .SelectMany(group => GetGroupsWithConditions(group, isCrossTargeting, frameworkConditions)));
                 }
             }
 
@@ -547,40 +532,61 @@ namespace NuGet.Commands
                 // Must not be any of the other package languages.
                 foreach (var lang in allLanguages)
                 {
-                    yield return string.Format(CultureInfo.InvariantCulture, NegativeLanguageCondition, language);
+                    yield return string.Format(CultureInfo.InvariantCulture, NegativeLanguageCondition, GetLanguage(lang));
                 }
             }
             else
             {
                 // Must be the language.
-                yield return string.Format(CultureInfo.InvariantCulture, LanguageCondition, language);
+                yield return string.Format(CultureInfo.InvariantCulture, LanguageCondition, GetLanguage(language));
             }
         }
 
-        private static Dictionary<string, List<KeyValuePair<LockFileContentFile, string>>> GetLanguageGroups(
-            this IEnumerable<KeyValuePair<LockFileContentFile, string>> items,
-            SortedSet<string> allLanguages)
+        private static string GetLanguage(string nugetLanguage)
         {
-            // Fallback group
-            var anyGroup = items.Where(e =>
-                PackagingConstants.AnyCodeLanguage.Equals(e.Key.CodeLanguage, StringComparison.OrdinalIgnoreCase))
-                .ToArray();
+            var lang = nugetLanguage.ToUpperInvariant();
 
-            var groups = new Dictionary<string, List<KeyValuePair<LockFileContentFile, string>>>(StringComparer.OrdinalIgnoreCase);
-
-            foreach (var lang in allLanguages)
+            // Translate S -> #
+            switch (lang)
             {
-                var langItems = new List<KeyValuePair<LockFileContentFile, string>>();
-                groups.Add(lang, langItems);
-
-                langItems.AddRange(items.Where(e =>
-                    lang.Equals(e.Key.CodeLanguage, StringComparison.OrdinalIgnoreCase)));
-
-                if (langItems.Count < 1)
-                {
-                    langItems.AddRange(anyGroup);
-                }
+                case "CS":
+                    return "C#";
+                case "FS":
+                    return "F#";
             }
+
+            // Return the language as it is
+            return lang;
+        }
+
+        private static IEnumerable<MSBuildRestoreItemGroup> GetLanguageGroups(
+            IEnumerable<KeyValuePair<LockFileContentFile, string>> items)
+        {
+            var currentItems = items.ToArray();
+
+            if (currentItems.Length == 0)
+            {
+                // Noop fast if this does not have content files.
+                return Enumerable.Empty<MSBuildRestoreItemGroup>();
+            }
+
+            // Find all languages used for the any group condition
+            var allLanguages = new SortedSet<string>(
+                currentItems.Select(e => e.Key.CodeLanguage)
+                            .Where(s => !PackagingConstants.AnyCodeLanguage.Equals(s, StringComparison.OrdinalIgnoreCase)),
+                StringComparer.OrdinalIgnoreCase);
+
+            // Convert content file items from a package into an ItemGroup with conditions.
+            // Remove _._ entries
+            // Filter empty groups
+            var groups = currentItems.GroupBy(e => e.Key.CodeLanguage, StringComparer.OrdinalIgnoreCase)
+                                .Select(group => MSBuildRestoreItemGroup.Create(
+                                    rootName: MSBuildRestoreItemGroup.ItemGroup,
+                                    position: 1,
+                                    conditions: GetLanguageConditions(group.Key, allLanguages),
+                                    items: group.Where(e => !e.Key.Path.EndsWith(PackagingCoreConstants.ForwardSlashEmptyFolder))
+                                                .Select(e => GenerateContentFilesItem(e.Value, e.Key))))
+                                .Where(group => group.Items.Count > 0);
 
             return groups;
         }
@@ -590,21 +596,23 @@ namespace NuGet.Commands
             bool isCrossTargeting,
             params string[] conditions)
         {
-            if (!isCrossTargeting)
+            if (isCrossTargeting)
+            {
+                foreach (var condition in conditions)
+                {
+                    yield return new MSBuildRestoreItemGroup()
+                    {
+                        RootName = original.RootName,
+                        Position = original.Position,
+                        Items = original.Items,
+                        Conditions = original.Conditions.Concat(new[] { condition }).ToList()
+                    };
+                }
+            }
+            else
             {
                 // No changes needed
                 yield return original;
-            }
-
-            foreach (var condition in conditions)
-            {
-                yield return new MSBuildRestoreItemGroup()
-                {
-                    RootName = original.RootName,
-                    Position = original.Position,
-                    Items = original.Items,
-                    Conditions = original.Conditions.Concat(new[] { condition }).ToList()
-                };
             }
         }
 

@@ -347,6 +347,8 @@ namespace NuGet.Commands
         {
             if (items.Any())
             {
+                var skipEmptyCheck = false;
+
                 var ordered = items.OrderBy(c => c.Path, StringComparer.OrdinalIgnoreCase)
                                    .ToArray();
 
@@ -357,6 +359,7 @@ namespace NuGet.Commands
 
                 if (props != null)
                 {
+                    skipEmptyCheck = true;
                     yield return props;
                 }
 
@@ -367,7 +370,21 @@ namespace NuGet.Commands
 
                 if (targets != null)
                 {
+                    skipEmptyCheck = true;
                     yield return targets;
+                }
+
+                if (!skipEmptyCheck)
+                {
+                    // Find _._ if it exists, this file is needed
+                    // but does not match the package id above.
+                    var empty = ordered.FirstOrDefault(c =>
+                        c.Path.EndsWith(PackagingCoreConstants.ForwardSlashEmptyFolder, StringComparison.Ordinal));
+
+                    if (empty != null)
+                    {
+                        yield return empty;
+                    }
                 }
             }
         }

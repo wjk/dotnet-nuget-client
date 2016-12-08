@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -141,7 +140,7 @@ namespace NuGet.Commands.Test
         [InlineData("contentFiles/cs/any/x.txt|contentFiles/cs/any/y.txt", "'$(Language)' != 'C#' AND '$(ExcludeRestorePackageImports)' != 'true'")]
         [InlineData("contentFiles/cs/any/x.txt|contentFiles/fs/any/x.txt", "'$(Language)' != 'C#' AND '$(Language)' != 'F#' AND '$(ExcludeRestorePackageImports)' != 'true'")]
         [InlineData("contentFiles/zz/any/x.txt|contentFiles/xx/any/x.txt|contentFiles/yy/any/x.txt", "'$(Language)' != 'XX' AND '$(Language)' != 'YY' AND '$(Language)' != 'ZZ' AND '$(ExcludeRestorePackageImports)' != 'true'")]
-        public async Task ContentFilesMSBuild_VerifyConditionForFalllbackContentItemGroup(string files, string expected)
+        public async Task ContentFilesMSBuild_VerifyConditionForFallbackContentItemGroup(string files, string expected)
         {
             // Arrange
             var logger = new TestLogger();

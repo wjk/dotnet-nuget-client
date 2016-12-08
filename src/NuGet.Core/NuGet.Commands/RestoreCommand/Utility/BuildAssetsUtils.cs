@@ -72,8 +72,6 @@ namespace NuGet.Commands
         public static List<MSBuildOutputFile> GenerateMultiTargetFailureFiles(
             string targetsPath,
             string propsPath,
-            string repositoryRoot,
-            bool success,
             RestoreOutputType restoreType,
             ILogger log,
             CancellationToken token)
@@ -82,18 +80,20 @@ namespace NuGet.Commands
             XDocument propsXML = null;
 
             // Create an error file for MSBuild to stop the build.
-            targetsXML = GenerateMultiTargetFrameworkWarning(repositoryRoot, restoreType, success);
+            targetsXML = GenerateMultiTargetFrameworkWarning();
 
             if (restoreType == RestoreOutputType.NETCore)
             {
-                propsXML = GenerateEmptyImportsFile(repositoryRoot, restoreType, success);
+                propsXML = GenerateEmptyImportsFile();
             }
 
-            return new List<MSBuildOutputFile>()
+            var files = new List<MSBuildOutputFile>()
             {
-                new MSBuildOutputFile(targetsPath, targetsXML),
                 new MSBuildOutputFile(propsPath, propsXML),
+                new MSBuildOutputFile(targetsPath, targetsXML),
             };
+
+            return files;
         }
 
         /// <summary>
@@ -105,8 +105,6 @@ namespace NuGet.Commands
             string propsPath,
             List<MSBuildRestoreItemGroup> targets,
             List<MSBuildRestoreItemGroup> props,
-            string repositoryRoot,
-            bool success,
             RestoreOutputType restoreType,
             ILogger log)
         {
@@ -118,20 +116,22 @@ namespace NuGet.Commands
             if (restoreType == RestoreOutputType.NETCore
                 || targets.Any(group => group.Items.Count > 0))
             {
-                targetsXML = GenerateMSBuildFile(targets, repositoryRoot, restoreType, success);
+                targetsXML = GenerateMSBuildFile(targets, restoreType);
             }
 
             if (restoreType == RestoreOutputType.NETCore
                 || props.Any(group => group.Items.Count > 0))
             {
-                propsXML = GenerateMSBuildFile(props, repositoryRoot, restoreType, success);
+                propsXML = GenerateMSBuildFile(props, restoreType);
             }
 
-            return new List<MSBuildOutputFile>()
+            var files = new List<MSBuildOutputFile>()
             {
                 new MSBuildOutputFile(targetsPath, targetsXML),
                 new MSBuildOutputFile(propsPath, propsXML),
             };
+
+            return files;
         }
 
         public static string ReplacePathsWithMacros(string path)
@@ -151,25 +151,43 @@ namespace NuGet.Commands
             return path;
         }
 
-        public static XDocument GenerateMultiTargetFrameworkWarning(string repositoryRoot, RestoreOutputType outputType, bool success)
+        public static XDocument GenerateMultiTargetFrameworkWarning()
         {
-            var doc = GenerateEmptyImportsFile(repositoryRoot, outputType, success);
-            var ns = doc.Root.GetDefaultNamespace();
+            var doc = GenerateEmptyImportsFile();
 
-            doc.Root.Add(new XElement(ns + "Target",
+            doc.Root.Add(new XElement(Namespace + "Target",
                         new XAttribute("Name", "EmitMSBuildWarning"),
                         new XAttribute("BeforeTargets", "Build"),
 
-                        new XElement(ns + "Warning",
+                        new XElement(Namespace + "Warning",
                             new XAttribute("Text", Strings.MSBuildWarning_MultiTarget))));
 
             return doc;
         }
 
         /// <summary>
-        /// Get empty file with the base properties.
+        /// Add standard properties to only props file if it exists, otherwise the targets.
         /// </summary>
-        public static XDocument GenerateEmptyImportsFile(string repositoryRoot, RestoreOutputType outputType, bool success)
+        public static void AddNuGetPropertiesToFirstImport(IEnumerable<MSBuildOutputFile> files,
+            IEnumerable<string> packageFolders,
+            string repositoryRoot,
+            RestoreOutputType outputType,
+            bool success)
+        {
+            var firstImport = files.Where(file => file.Content != null)
+                .OrderByDescending(file => file.Path.EndsWith(PropsExtension) ? 1 : 0)
+                .FirstOrDefault();
+
+            if (firstImport != null)
+            {
+                AddNuGetProperties(firstImport.Content, packageFolders, repositoryRoot, outputType, success);
+            }
+        }
+
+        /// <summary>
+        /// Apply standard properties in a property group.
+        /// </summary>
+        public static void AddNuGetProperties(XDocument doc, IEnumerable<string> packageFolders, string repositoryRoot, RestoreOutputType outputType, bool success)
         {
             var projectStyle = "Unknown";
 
@@ -182,18 +200,26 @@ namespace NuGet.Commands
                 projectStyle = "ProjectJson";
             }
 
-            var ns = XNamespace.Get("http://schemas.microsoft.com/developer/msbuild/2003");
+            doc.Root.AddFirst(
+                new XElement(Namespace + "PropertyGroup",
+                            GetProperty("RestoreSuccess", success.ToString()),
+                            GetProperty("RestoreTool", "NuGet"),
+                            GetProperty("NuGetPackageRoot", ReplacePathsWithMacros(repositoryRoot)),
+                            GetProperty("NuGetPackageFolders", string.Join(";", packageFolders)),
+                            GetProperty("NuGetProjectStyle", projectStyle),
+                            GetProperty("NuGetToolVersion", MinClientVersionUtility.GetNuGetClientVersion().ToNormalizedString())));
+        }
+
+        /// <summary>
+        /// Get empty file with the base properties.
+        /// </summary>
+        public static XDocument GenerateEmptyImportsFile()
+        {
             var doc = new XDocument(
                 new XDeclaration("1.0", "utf-8", "no"),
 
-                new XElement(ns + "Project",
-                    new XAttribute("ToolsVersion", "14.0"),
-
-                    new XElement(ns + "PropertyGroup",
-                        GetProperty("NuGetPackageRoot", ReplacePathsWithMacros(repositoryRoot)),
-                        GetProperty("NuGetProjectStyle", projectStyle),
-                        GetProperty("NuGetToolVersion", MinClientVersionUtility.GetNuGetClientVersion().ToNormalizedString()),
-                        GetProperty("NuGetRestoreSuccess", success.ToString()))));
+                new XElement(Namespace + "Project",
+                    new XAttribute("ToolsVersion", "14.0")));
 
             return doc;
         }
@@ -223,17 +249,14 @@ namespace NuGet.Commands
         /// <summary>
         /// Returns null if the result should not exist on disk.
         /// </summary>
-        public static XDocument GenerateMSBuildFile(List<MSBuildRestoreItemGroup> groups,
-            string repositoryRoot,
-            RestoreOutputType outputType,
-            bool success)
+        public static XDocument GenerateMSBuildFile(List<MSBuildRestoreItemGroup> groups, RestoreOutputType outputType)
         {
             XDocument doc = null;
 
             // Always write out netcore props/targets. For project.json only write the file if it has items.
             if (outputType == RestoreOutputType.NETCore || groups.SelectMany(e => e.Items).Any())
             {
-                doc = GenerateEmptyImportsFile(repositoryRoot, outputType, success);
+                doc = GenerateEmptyImportsFile();
 
                 // Add import groups, order by position, then by the conditions to keep the results deterministic
                 // Skip empty groups
@@ -376,8 +399,6 @@ namespace NuGet.Commands
                 return GenerateMultiTargetFailureFiles(
                     targetsPath,
                     propsPath,
-                    repositoryRoot,
-                    restoreSuccess,
                     request.RestoreOutputType,
                     log,
                     token);
@@ -514,15 +535,21 @@ namespace NuGet.Commands
             }
 
             // Create XML, these may be null if the file should be deleted/not written out.
-            var propsXML = GenerateMSBuildFile(props, repositoryRoot, request.RestoreOutputType, restoreSuccess);
-            var targetsXML = GenerateMSBuildFile(targets, repositoryRoot, request.RestoreOutputType, restoreSuccess);
+            var propsXML = GenerateMSBuildFile(props, request.RestoreOutputType);
+            var targetsXML = GenerateMSBuildFile(targets, request.RestoreOutputType);
 
             // Return all files to write out or delete.
-            return new List<MSBuildOutputFile>
+            var files = new List<MSBuildOutputFile>
             {
                 new MSBuildOutputFile(propsPath, propsXML),
                 new MSBuildOutputFile(targetsPath, targetsXML)
             };
+
+            var packageFolders = repositories.Select(e => e.RepositoryRoot);
+
+            AddNuGetPropertiesToFirstImport(files, packageFolders, repositoryRoot, request.RestoreOutputType, restoreSuccess);
+
+            return files;
         }
 
         private static IEnumerable<string> GetLanguageConditions(string language, SortedSet<string> allLanguages)

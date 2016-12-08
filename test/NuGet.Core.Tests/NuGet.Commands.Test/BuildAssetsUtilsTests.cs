@@ -28,7 +28,11 @@ namespace NuGet.Commands.Test
                 if (!string.IsNullOrEmpty(globalPackagesFolder))
                 {
                     // Act
-                    var xml = BuildAssetsUtils.GenerateEmptyImportsFile(
+                    var xml = BuildAssetsUtils.GenerateEmptyImportsFile();
+
+                    BuildAssetsUtils.AddNuGetProperties(
+                        xml,
+                        new[] { globalPackagesFolder },
                         globalPackagesFolder,
                         RestoreOutputType.NETCore,
                         success: true);
@@ -168,15 +172,11 @@ namespace NuGet.Commands.Test
                 // Act
                 var targetsXML = BuildAssetsUtils.GenerateMSBuildFile(
                     targetGroups,
-                    globalPackagesFolder,
-                    RestoreOutputType.NETCore,
-                    success: true);
+                    RestoreOutputType.NETCore);
 
                 var propsXML = BuildAssetsUtils.GenerateMSBuildFile(
                     propGroups,
-                    globalPackagesFolder,
-                    RestoreOutputType.NETCore,
-                    success: true);
+                    RestoreOutputType.NETCore);
 
                 // Assert
                 var targetItemGroups = targetsXML.Root.Elements().Where(e => e.Name.LocalName == "ImportGroup").ToList();
@@ -252,9 +252,7 @@ namespace NuGet.Commands.Test
                 // Act
                 var targetsXML = BuildAssetsUtils.GenerateMSBuildFile(
                     targets,
-                    globalPackagesFolder,
-                    RestoreOutputType.NETCore,
-                    success: true);
+                    RestoreOutputType.NETCore);
 
                 // Assert
                 var targetItemGroups = targetsXML.Root.Elements().Where(e => e.Name.LocalName == "ImportGroup").ToList();
@@ -285,9 +283,7 @@ namespace NuGet.Commands.Test
                 // Act
                 var xml = BuildAssetsUtils.GenerateMSBuildFile(
                     targets,
-                    globalPackagesFolder,
-                    RestoreOutputType.NETCore,
-                    success: true);
+                    RestoreOutputType.NETCore);
 
                 // Assert
                 Assert.NotNull(xml);
@@ -307,9 +303,7 @@ namespace NuGet.Commands.Test
                 // Act
                 var xml = BuildAssetsUtils.GenerateMSBuildFile(
                     targets,
-                    globalPackagesFolder,
-                    RestoreOutputType.UAP,
-                    success: true);
+                    RestoreOutputType.UAP);
 
                 // Assert
                 Assert.Null(xml);
@@ -355,9 +349,7 @@ namespace NuGet.Commands.Test
                 // Act
                 var xml = BuildAssetsUtils.GenerateMSBuildFile(
                     targets,
-                    globalPackagesFolder,
-                    RestoreOutputType.NETCore,
-                    success: true);
+                    RestoreOutputType.NETCore);
 
                 // Assert
                 var targetItemGroups = xml.Root.Elements().Where(e => e.Name.LocalName == "ImportGroup").ToList();
@@ -404,9 +396,7 @@ namespace NuGet.Commands.Test
                 // Act
                 var xml = BuildAssetsUtils.GenerateMSBuildFile(
                     targets,
-                    globalPackagesFolder,
-                    RestoreOutputType.UAP,
-                    success: true);
+                    RestoreOutputType.UAP);
 
                 // Assert
                 var targetItemGroups = xml.Root.Elements().Where(e => e.Name.LocalName == "ImportGroup").ToList();
@@ -484,9 +474,7 @@ namespace NuGet.Commands.Test
                 // Act
                 var xml = BuildAssetsUtils.GenerateMSBuildFile(
                     targets,
-                    globalPackagesFolder,
-                    RestoreOutputType.UAP,
-                    success: true);
+                    RestoreOutputType.UAP);
 
                 // Assert
                 var targetItemGroups = xml.Root.Elements().Where(e => e.Name.LocalName == "ImportGroup").ToList();

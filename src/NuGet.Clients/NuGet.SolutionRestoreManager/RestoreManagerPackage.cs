@@ -6,9 +6,7 @@ using System.ComponentModel.Composition;
 using System.Runtime.InteropServices;
 using System.Threading;
 using Microsoft.VisualStudio;
-using Microsoft.VisualStudio.ComponentModelHost;
 using Microsoft.VisualStudio.Shell;
-using Microsoft.VisualStudio.Shell.Interop;
 using NuGet.Configuration;
 using NuGet.PackageManagement.VisualStudio;
 using NuGet.Protocol.Core.Types;
@@ -49,14 +47,14 @@ namespace NuGet.SolutionRestoreManager
             CancellationToken cancellationToken, 
             IProgress<ServiceProgressData> progress)
         {
-            var componentModel = await GetServiceAsync(typeof(SComponentModel)) as IComponentModel;
+            var componentModel = await this.GetComponentModelAsync();
             componentModel.DefaultCompositionService.SatisfyImportsOnce(this);
 
             await ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
             {
                 await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
-                var dte = (EnvDTE.DTE)await GetServiceAsync(typeof(SDTE));
+                var dte = await this.GetDTEAsync();
                 _buildEvents = dte.Events.BuildEvents;
                 _buildEvents.OnBuildBegin += BuildEvents_OnBuildBegin;
 

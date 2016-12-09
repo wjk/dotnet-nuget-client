@@ -238,12 +238,49 @@ namespace NuGet.Commands
                                 new XAttribute("Condition", $"Exists('{path}')"));
         }
 
-        public static XElement GenerateContentFilesItem(string path, LockFileContentFile item)
+        public static XElement GenerateContentFilesItem(string path, LockFileContentFile item, string packageId, string packageVersion)
         {
-            // TODO: add other attributes
-            return new XElement(Namespace + item.BuildAction.Value,
+            var entry = new XElement(Namespace + item.BuildAction.Value,
                                 new XAttribute("Include", path),
-                                new XAttribute("Condition", $"Exists('{path}')"));
+                                new XAttribute("Condition", $"Exists('{path}')"),
+                                new XElement(Namespace + "NuGetPackageId", packageId),
+                                new XElement(Namespace + "NuGetPackageVersion", packageVersion),
+                                new XElement(Namespace + "NuGetItemType", item.BuildAction));
+
+            var privateFlag = false;
+
+            if (item.CopyToOutput)
+            {
+                var outputPath = item.OutputPath ?? item.PPOutputPath;
+
+                if (outputPath != null)
+                {
+                    privateFlag = true;
+                    entry.Add(new XElement(Namespace + "CopyToOutputDirectory", "PreserveNewest"));
+
+                    entry.Add(new XElement(Namespace + "TargetPath", outputPath));
+
+                    var destinationSubDirectory = Path.GetDirectoryName(outputPath);
+
+                    if (!string.IsNullOrEmpty(destinationSubDirectory))
+                    {
+                        entry.Add("DestinationSubDirectory", destinationSubDirectory + Path.DirectorySeparatorChar);
+                    }
+                }
+            }
+
+            entry.Add("Private", privateFlag.ToString());
+
+            // Remove contentFile/lang/tfm/ from start of the path
+            var linkPath = string.Join(string.Empty + Path.DirectorySeparatorChar, 
+                    item.Path.Split(new[] { '/' }, StringSplitOptions.RemoveEmptyEntries)
+                        .Skip(3)
+                        .ToArray());
+
+
+            entry.Add("Link", linkPath);
+
+            return entry;
         }
 
         /// <summary>
@@ -520,9 +557,10 @@ namespace NuGet.Commands
                          pkg.Key.ContentFiles
                                 .OrderBy(e => e.Path, StringComparer.Ordinal)
                                 .Select(e =>
-                                    new KeyValuePair<LockFileContentFile, string>(
-                                        key: e,
-                                        value: pkg.Value.GetAbsolutePath(GetImportPath(e.Path, repositoryRoot)))))
+                                    new Tuple<LockFileTargetLibrary, LockFileContentFile, string>(
+                                        item1: pkg.Key,
+                                        item2: e,
+                                        item3: pkg.Value.GetAbsolutePath(GetImportPath(e.Path, repositoryRoot)))))
                          .SelectMany(e => GetLanguageGroups(e))
                          .SelectMany(group => GetGroupsWithConditions(group, isCrossTargeting, frameworkConditions)));
                 }
@@ -587,7 +625,7 @@ namespace NuGet.Commands
         }
 
         private static IEnumerable<MSBuildRestoreItemGroup> GetLanguageGroups(
-            IEnumerable<KeyValuePair<LockFileContentFile, string>> items)
+            IEnumerable<Tuple<LockFileTargetLibrary, LockFileContentFile, string>> items)
         {
             var currentItems = items.ToArray();
 
@@ -597,22 +635,26 @@ namespace NuGet.Commands
                 return Enumerable.Empty<MSBuildRestoreItemGroup>();
             }
 
+            var packageId = currentItems[0].Item1.Name;
+            var packageVersion = currentItems[0].Item1.Version.ToNormalizedString();
+
             // Find all languages used for the any group condition
             var allLanguages = new SortedSet<string>(
-                currentItems.Select(e => e.Key.CodeLanguage)
+                currentItems.Select(e => e.Item2.CodeLanguage)
                             .Where(s => !PackagingConstants.AnyCodeLanguage.Equals(s, StringComparison.OrdinalIgnoreCase)),
                 StringComparer.OrdinalIgnoreCase);
 
             // Convert content file items from a package into an ItemGroup with conditions.
             // Remove _._ entries
             // Filter empty groups
-            var groups = currentItems.GroupBy(e => e.Key.CodeLanguage, StringComparer.OrdinalIgnoreCase)
+            var groups = currentItems.GroupBy(e => e.Item2.CodeLanguage, StringComparer.OrdinalIgnoreCase)
                                 .Select(group => MSBuildRestoreItemGroup.Create(
                                     rootName: MSBuildRestoreItemGroup.ItemGroup,
                                     position: 1,
                                     conditions: GetLanguageConditions(group.Key, allLanguages),
-                                    items: group.Where(e => !e.Key.Path.EndsWith(PackagingCoreConstants.ForwardSlashEmptyFolder))
-                                                .Select(e => GenerateContentFilesItem(e.Value, e.Key))))
+                                    items: group.Where(e => !e.Item2.Path.EndsWith(PackagingCoreConstants.ForwardSlashEmptyFolder)
+                                                            && !e.Item2.Path.EndsWith(".pp")) // Skip .pp files for now
+                                                .Select(e => GenerateContentFilesItem(e.Item3, e.Item2, packageId, packageVersion))))
                                 .Where(group => group.Items.Count > 0);
 
             return groups;

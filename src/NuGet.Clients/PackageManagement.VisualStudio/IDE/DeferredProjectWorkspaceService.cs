@@ -5,11 +5,11 @@ using System;
 using System.Collections.Generic;
 using System.ComponentModel.Composition;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Threading;
 using Microsoft.VisualStudio.Workspace;
+using Microsoft.VisualStudio.Workspace.Extensions.MSBuild;
 using Microsoft.VisualStudio.Workspace.Indexing;
 using Microsoft.VisualStudio.Workspace.VSIntegration;
 
@@ -54,6 +54,53 @@ namespace NuGet.PackageManagement.VisualStudio
             var indexService = workspace.GetIndexWorkspaceService();
             var fileReferenceResult = await indexService.GetFileReferencesAsync(projectFilePath, referenceTypes: (int)FileReferenceInfoType.ProjectReference);
             return fileReferenceResult.Select(f => workspace.MakeRooted(f.Path));
+        }
+
+        public async Task<IMSBuildProjectDataService> GetMSBuildProjectDataService(string projectFilePath, string targetFramework = "")
+        {
+            return await ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+            {
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                var factory = SolutionWorkspaceService.GetService(typeof(IVsSolutionMSBuildProjectServiceFactory)) as IVsSolutionMSBuildProjectServiceFactory;
+
+                if (factory == null)
+                {
+                    throw new ArgumentNullException(nameof(factory));
+                }
+
+                if (string.IsNullOrEmpty(targetFramework))
+                {
+                    return await factory.GetMSBuildProjectDataServiceAsync(projectFilePath);
+                }
+                else
+                {
+                    var projectProperties = new Dictionary<string, string>
+                    {
+                        { "TargetFramework", targetFramework }
+                    };
+                    return await factory.GetMSBuildProjectDataServiceAsync(projectFilePath, projectProperties: projectProperties);
+                }
+            });
+        }
+
+        public async Task<IEnumerable<MSBuildProjectItemData>> GetProjectItemsAsync(IMSBuildProjectDataService dataService, string itemType)
+        {
+            if (dataService == null)
+            {
+                throw new ArgumentNullException(nameof(dataService));
+            }
+
+            return await dataService.GetProjectItems(itemType);
+        }
+
+        public async Task<string> GetProjectPropertyAsync(IMSBuildProjectDataService dataService, string propertyName)
+        {
+            if (dataService == null)
+            {
+                throw new ArgumentNullException(nameof(dataService));
+            }
+
+            return (await dataService.GetProjectProperty(propertyName)).EvaluatedValue;
         }
     }
 }

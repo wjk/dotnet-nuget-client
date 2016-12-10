@@ -1,14 +1,21 @@
 ﻿// Copyright (c) .NET Foundation. All rights reserved.
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.VisualStudio.Workspace.Extensions.MSBuild;
+using NuGet.Commands;
 using NuGet.Frameworks;
 using NuGet.Packaging;
+using NuGet.ProjectManagement;
 using NuGet.ProjectModel;
-using System.Threading;
+using NuGet.RuntimeModel;
+using NuGet.LibraryModel;
+using NuGet.Versioning;
 
 namespace NuGet.PackageManagement.VisualStudio
 {
@@ -17,6 +24,20 @@ namespace NuGet.PackageManagement.VisualStudio
     /// </summary>
     public static class DeferredProjectRestoreUtility
     {
+        private static readonly string IncludeAssets = "IncludeAssets";
+        private static readonly string ExcludeAssets = "ExcludeAssets";
+        private static readonly string PrivateAssets = "PrivateAssets";
+        private static readonly string BaseIntermediateOutputPath = "BaseIntermediateOutputPath";
+        private static readonly string PackageReference = "PackageReference";
+        private static readonly string ProjectReference = "ProjectReference";
+        private static readonly string RuntimeIdentifier = "RuntimeIdentifier";
+        private static readonly string RuntimeIdentifiers = "RuntimeIdentifiers";
+        private static readonly string RuntimeSupports = "RuntimeSupports";
+        private static readonly string TargetFramework = "TargetFramework";
+        private static readonly string TargetFrameworks = "TargetFrameworks";
+        private static readonly string NuGetTargetFramework = "NuGetTargetFramework";
+        private static readonly string PackageTargetFallback = "PackageTargetFallback";
+
         public static async Task<DeferredProjectRestoreData> GetDeferredProjectsData(
             IDeferredProjectWorkspaceService deferredWorkspaceService,
             IEnumerable<string> deferredProjectsPath,
@@ -75,18 +96,14 @@ namespace NuGet.PackageManagement.VisualStudio
                     }
                     else
                     {
-                        // TODO: https://github.com/NuGet/Home/issues/4003
                         // package references (CPS or Legacy CSProj)
-                        /*var packageRefsDict = await deferredWorkspaceService.GetPackageReferencesAsync(projectPath, token);
-
-                        if (packageRefsDict.Count > 0)
+                        var packageSpec = await GetPackageSpecForPackageReferencesAsync(deferredWorkspaceService, projectPath);
+                        if (packageSpec != null)
                         {
-                            var packageSpec = await GetPackageSpecForPackageReferencesAsync(deferredWorkspaceService, projectPath);
                             packageSpecs.Add(packageSpec);
-                        }*/
+                        }
                     }
                 }
-
             }
             
             return new DeferredProjectRestoreData(packageReferencesDict, packageSpecs);
@@ -95,15 +112,8 @@ namespace NuGet.PackageManagement.VisualStudio
         private static async Task<PackageSpec> GetPackageSpecForPackagesConfigAsync(IDeferredProjectWorkspaceService deferredWorkspaceService, string projectPath)
         {
             var projectName = Path.GetFileNameWithoutExtension(projectPath);
-            var msbuildProject = EnvDTEProjectUtility.AsMicrosoftBuildEvaluationProject(projectPath);
-            var targetFrameworkString = MSBuildProjectUtility.GetTargetFrameworkString(msbuildProject);
 
-            if (targetFrameworkString == null)
-            {
-                return null;
-            }
-
-            var nuGetFramework = new NuGetFramework(targetFrameworkString);
+            var nuGetFramework = GetNuGetFramework(projectPath);
 
             var packageSpec = new PackageSpec(
                 new List<TargetFrameworkInformation>
@@ -158,28 +168,88 @@ namespace NuGet.PackageManagement.VisualStudio
             return packageSpec;
         }
 
-        /*private static async Task<PackageSpec> GetPackageSpecForPackageReferencesAsync(
+        private static async Task<PackageSpec> GetPackageSpecForPackageReferencesAsync(
             IDeferredProjectWorkspaceService deferredWorkspaceService, 
             string projectPath)
         {
             var projectName = Path.GetFileNameWithoutExtension(projectPath);
-            var msbuildProject = EnvDTEProjectUtility.AsMicrosoftBuildEvaluationProject(projectPath);
-            var targetFrameworkString = MSBuildProjectUtility.GetTargetFrameworkString(msbuildProject);
+            var projectDirectory = Path.GetDirectoryName(projectPath);
 
-            if (targetFrameworkString == null)
+            var msbuildProjectDataService = await deferredWorkspaceService.GetMSBuildProjectDataService(projectPath);
+
+            var packageReferences = (await deferredWorkspaceService.GetProjectItemsAsync(msbuildProjectDataService, PackageReference)).ToList();
+            if (packageReferences.Count == 0)
             {
                 return null;
             }
 
-            var targetFrameworks = targetFrameworkString.Split(new[] { ';' });
+            var targetFrameworks = await GetNuGetFrameworks(deferredWorkspaceService, msbuildProjectDataService, projectPath);
+            if (targetFrameworks.Count == 0)
+            {
+                return null;
+            }
 
-            var tfis = targetFrameworks.Select(tfm => new NuGetFramework(tfm)).
-                Select(nFramework => new TargetFrameworkInformation
+            var outputPath = Path.GetFullPath(
+                Path.Combine(
+                    projectDirectory,
+                    await GetProjectPropertyOrDefault(deferredWorkspaceService, msbuildProjectDataService, BaseIntermediateOutputPath)));
+
+            var crossTargeting = targetFrameworks.Count > 1;
+
+            var tfis = new List<TargetFrameworkInformation>();
+            var projectsByFramework = new Dictionary<NuGetFramework, IEnumerable<ProjectRestoreReference>>();
+            var runtimes = new List<string>();
+            var supports = new List<string>();
+
+            foreach (var targetFramework in targetFrameworks)
+            {
+                var tfi = new TargetFrameworkInformation
                 {
-                    FrameworkName = nFramework
-                }).ToArray();
+                    FrameworkName = targetFramework
+                };
 
-            var packageSpec = new PackageSpec(tfis);
+                // re-evaluate msbuild project data service if there are multi-targets
+                if (targetFrameworks.Count > 1)
+                {
+                    msbuildProjectDataService = await deferredWorkspaceService.GetMSBuildProjectDataService(
+                        projectPath,
+                        targetFramework.GetShortFolderName());
+
+                    packageReferences = (await deferredWorkspaceService.GetProjectItemsAsync(msbuildProjectDataService, PackageReference)).ToList();
+                }
+
+                // Package target fallback per target framework
+                var ptf = await deferredWorkspaceService.GetProjectPropertyAsync(msbuildProjectDataService, PackageTargetFallback);
+                if (!string.IsNullOrEmpty(ptf))
+                {
+                    var fallBackList = ptf.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
+                        .Select(NuGetFramework.Parse).ToList();
+
+                    if (fallBackList.Count > 0)
+                    {
+                        tfi.FrameworkName = new FallbackFramework(tfi.FrameworkName, fallBackList);
+                    }
+
+                    tfi.Imports = fallBackList;
+                }
+
+                // package references per target framework
+                tfi.Dependencies.AddRange(
+                    packageReferences.Select(ToPackageLibraryDependency));
+
+                // Project references per target framework
+                var projectReferences = (await deferredWorkspaceService.GetProjectItemsAsync(msbuildProjectDataService, ProjectReference))
+                    .Select(item => ToProjectRestoreReference(item, projectDirectory));
+                projectsByFramework.Add(tfi.FrameworkName, projectReferences);
+
+                // Runtimes, Supports per target framework
+                runtimes.AddRange(await GetRuntimeIdentifiers(deferredWorkspaceService, msbuildProjectDataService));
+                supports.AddRange(await GetRuntimeSupports(deferredWorkspaceService, msbuildProjectDataService));
+
+                tfis.Add(tfi);
+            }
+
+            var packageSpec = new PackageSpec(tfis)
             {
                 Name = projectName,
                 FilePath = projectPath,
@@ -188,37 +258,171 @@ namespace NuGet.PackageManagement.VisualStudio
                     ProjectName = projectName,
                     ProjectUniqueName = projectPath,
                     ProjectPath = projectPath,
-                    OutputPath = Path.GetFullPath(
-                        Path.Combine(
-                            projectDirectory,
-                            projectRestoreInfo.BaseIntermediatePath)),
+                    OutputPath = outputPath,
                     OutputType = RestoreOutputType.NETCore,
-                    TargetFrameworks = projectRestoreInfo.TargetFrameworks
-                        .Cast<IVsTargetFrameworkInfo>()
-                        .Select(item => ToProjectRestoreMetadataFrameworkInfo(item, projectDirectory))
+                    TargetFrameworks = (projectsByFramework.Select(
+                        kvp => new ProjectRestoreMetadataFrameworkInfo(kvp.Key)
+                        {
+                            ProjectReferences = kvp.Value?.ToList()
+                        }
+                    )).ToList(),
+                    OriginalTargetFrameworks = tfis
+                        .Select(tf => tf.FrameworkName.GetShortFolderName())
                         .ToList(),
-                    OriginalTargetFrameworks = originalTargetFrameworks,
                     CrossTargeting = crossTargeting
                 },
-                RuntimeGraph = GetRuntimeGraph(projectRestoreInfo)
+                RuntimeGraph = new RuntimeGraph(
+                    runtimes.Distinct(StringComparer.Ordinal).Select(rid => new RuntimeDescription(rid)),
+                    supports.Distinct(StringComparer.Ordinal).Select(s => new CompatibilityProfile(s)))
             };
 
-            packageSpec.Name = projectName;
-            packageSpec.FilePath = projectPath;
-
-            var metadata = new ProjectRestoreMetadata();
-            packageSpec.RestoreMetadata = metadata;
-
-            metadata.OutputType = RestoreOutputType.PackagesConfig;
-            metadata.ProjectPath = projectPath;
-            metadata.ProjectName = projectName;
-            metadata.ProjectUniqueName = projectPath;
-            //metadata.TargetFrameworks.Add(new ProjectRestoreMetadataFrameworkInfo(nuGetFramework));
-
-            await AddProjectReferencesAsync(deferredWorkspaceService, metadata, projectPath);
-
             return packageSpec;
-        }*/
+        }
+
+        private static async Task<List<string>> GetRuntimeIdentifiers(
+            IDeferredProjectWorkspaceService deferredWorkspaceService,
+            IMSBuildProjectDataService dataService)
+        {
+            var runtimeIdentifier = await GetProjectPropertyOrDefault(deferredWorkspaceService, dataService, RuntimeIdentifier);
+            var runtimeIdentifiers = await GetProjectPropertyOrDefault(deferredWorkspaceService, dataService, RuntimeIdentifiers);
+
+            var runtimes = (new[] { runtimeIdentifier, runtimeIdentifiers })
+                .SelectMany(s => s.Split(';'))
+                .Where(s => !string.IsNullOrEmpty(s))
+                .ToList();
+
+            return runtimes;
+        }
+
+        private static async Task<List<string>> GetRuntimeSupports(
+            IDeferredProjectWorkspaceService deferredWorkspaceService,
+            IMSBuildProjectDataService dataService)
+        {
+            var supports = (await GetProjectPropertyOrDefault(deferredWorkspaceService, dataService, RuntimeSupports))
+                .Split(';')
+                .Where(s => !string.IsNullOrEmpty(s))
+                .ToList();
+
+            return supports;
+        }
+
+        private static async Task<string> GetProjectPropertyOrDefault(
+            IDeferredProjectWorkspaceService deferredWorkspaceService,
+            IMSBuildProjectDataService dataService,
+            string projectPropertyName,
+            string defaultValue = "")
+        {
+            var propertyValue = await deferredWorkspaceService.GetProjectPropertyAsync(dataService, projectPropertyName);
+
+            if (!string.IsNullOrEmpty(propertyValue))
+            {
+                return propertyValue;
+            }
+
+            return defaultValue;
+        }
+
+        private static ProjectRestoreReference ToProjectRestoreReference(MSBuildProjectItemData item, string projectDirectory)
+        {
+            var referencePath = Path.GetFullPath(
+                Path.Combine(
+                    projectDirectory, item.EvaluatedInclude));
+
+            var reference = new ProjectRestoreReference()
+            {
+                ProjectUniqueName = referencePath,
+                ProjectPath = referencePath
+            };
+
+            MSBuildRestoreUtility.ApplyIncludeFlags(
+                reference,
+                includeAssets: GetPropertyValueOrDefault(item, IncludeAssets),
+                excludeAssets: GetPropertyValueOrDefault(item, ExcludeAssets),
+                privateAssets: GetPropertyValueOrDefault(item, PrivateAssets));
+
+            return reference;
+        }
+
+        private static LibraryDependency ToPackageLibraryDependency(MSBuildProjectItemData item)
+        {
+            var dependency = new LibraryDependency
+            {
+                LibraryRange = new LibraryRange(
+                    name: item.EvaluatedInclude,
+                    versionRange: GetVersionRange(item),
+                    typeConstraint: LibraryDependencyTarget.Package)
+            };
+
+            MSBuildRestoreUtility.ApplyIncludeFlags(
+                dependency,
+                includeAssets: GetPropertyValueOrDefault(item, IncludeAssets),
+                excludeAssets: GetPropertyValueOrDefault(item, ExcludeAssets),
+                privateAssets: GetPropertyValueOrDefault(item, PrivateAssets));
+
+            return dependency;
+        }
+
+        private static VersionRange GetVersionRange(MSBuildProjectItemData item)
+        {
+            var versionRange = GetPropertyValueOrDefault(item, "Version");
+
+            if (!string.IsNullOrEmpty(versionRange))
+            {
+                return VersionRange.Parse(versionRange);
+            }
+
+            return VersionRange.All;
+        }
+
+        private static string GetPropertyValueOrDefault(
+            MSBuildProjectItemData item, string propertyName, string defaultValue = "")
+        {
+            if (item.Metadata.Keys.Contains(propertyName))
+            {
+                return item.Metadata[propertyName];
+            }
+
+            return defaultValue;
+        }
+
+        private static async Task<List<NuGetFramework>> GetNuGetFrameworks(
+            IDeferredProjectWorkspaceService deferredWorkspaceService,
+            IMSBuildProjectDataService dataService,
+            string projectPath)
+        {
+            var targetFrameworks = await deferredWorkspaceService.GetProjectPropertyAsync(dataService, TargetFrameworks);
+            if (!string.IsNullOrEmpty(targetFrameworks))
+            {
+                return targetFrameworks
+                    .Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(NuGetFramework.Parse).ToList();
+            }
+
+            var targetFramework = await deferredWorkspaceService.GetProjectPropertyAsync(dataService, TargetFramework);
+            if (!string.IsNullOrEmpty(targetFramework))
+            {
+                return new List<NuGetFramework> { NuGetFramework.Parse(targetFramework) };
+            }
+
+            var nuGetTargetFramework = await deferredWorkspaceService.GetProjectPropertyAsync(dataService, NuGetTargetFramework);
+            if (!string.IsNullOrEmpty(nuGetTargetFramework))
+            {
+                return new List<NuGetFramework> { NuGetFramework.ParseFrameworkName(nuGetTargetFramework, DefaultFrameworkNameProvider.Instance) };
+            }
+
+            // old packages.config style
+            return new List<NuGetFramework> { GetNuGetFramework(projectPath) };
+        }
+
+        private static NuGetFramework GetNuGetFramework(string projectPath)
+        {
+            var msbuildProject = EnvDTEProjectUtility.AsMicrosoftBuildEvaluationProject(projectPath);
+            var targetFrameworkString = MSBuildProjectUtility.GetTargetFrameworkString(msbuildProject);
+            var framework = NuGetFramework.Parse(targetFrameworkString);
+
+            // further parse framework for .net core 4.5.1 or 4.5 and get compatible framework instance
+            return MSBuildNuGetProjectSystemUtility.GetProjectFrameworkReplacement(framework);
+        }
 
         private static async Task AddProjectReferencesAsync(
             IDeferredProjectWorkspaceService deferredWorkspaceService,

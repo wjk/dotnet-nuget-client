@@ -20,7 +20,9 @@ namespace NuGet.SolutionRestoreManager
     /// Visual Studio extension package designed to bootstrap solution restore components.
     /// Loads on solution open to attach to build events.
     /// </summary>
-    [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
+    // Flag AllowsBackgroundLoading is set to False because switching to Main thread wiht JTF is creating
+    // performance overhead in InitializeAsync() API.
+    [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = false)]
     [ProvideAutoLoad(VSConstants.UICONTEXT.SolutionExists_string)]
     [Guid(PackageGuidString)]
     public sealed class RestoreManagerPackage : AsyncPackage
@@ -52,18 +54,15 @@ namespace NuGet.SolutionRestoreManager
             var componentModel = await GetServiceAsync(typeof(SComponentModel)) as IComponentModel;
             componentModel.DefaultCompositionService.SatisfyImportsOnce(this);
 
-            await ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
-            {
-                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+            // Accessing DTE without confirming to Main thread because AllowsBackgroundLoading is false which
+            // will make sure that this piece is always executed on Main thread.
+            var dte = (EnvDTE.DTE)await GetServiceAsync(typeof(SDTE));
+            _buildEvents = dte.Events.BuildEvents;
+            _buildEvents.OnBuildBegin += BuildEvents_OnBuildBegin;
 
-                var dte = (EnvDTE.DTE)await GetServiceAsync(typeof(SDTE));
-                _buildEvents = dte.Events.BuildEvents;
-                _buildEvents.OnBuildBegin += BuildEvents_OnBuildBegin;
-
-                UserAgent.SetUserAgentString(
-                    new UserAgentStringBuilder().WithVisualStudioSKU(dte.GetFullVsVersionString()));
-            });
-
+            UserAgent.SetUserAgentString(
+                new UserAgentStringBuilder().WithVisualStudioSKU(dte.GetFullVsVersionString()));
+ 
             await base.InitializeAsync(cancellationToken, progress);
         }
 

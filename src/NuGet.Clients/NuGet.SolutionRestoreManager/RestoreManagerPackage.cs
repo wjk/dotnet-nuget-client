@@ -9,6 +9,7 @@ using Microsoft.VisualStudio;
 using Microsoft.VisualStudio.ComponentModelHost;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Shell.Interop;
+using Microsoft.VisualStudio.Threading;
 using NuGet.Configuration;
 using NuGet.PackageManagement.VisualStudio;
 using NuGet.Protocol.Core.Types;
@@ -22,7 +23,7 @@ namespace NuGet.SolutionRestoreManager
     /// </summary>
     // Flag AllowsBackgroundLoading is set to False because switching to Main thread wiht JTF is creating
     // performance overhead in InitializeAsync() API.
-    [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = false)]
+    [PackageRegistration(UseManagedResourcesOnly = true, AllowsBackgroundLoading = true)]
     [ProvideAutoLoad(VSConstants.UICONTEXT.SolutionExists_string)]
     [Guid(PackageGuidString)]
     public sealed class RestoreManagerPackage : AsyncPackage
@@ -33,6 +34,8 @@ namespace NuGet.SolutionRestoreManager
         /// RestoreManagerPackage GUID string.
         /// </summary>
         public const string PackageGuidString = "2b52ac92-4551-426d-bd34-c6d7d9fdd1c5";
+
+        private const string LogEntrySource = "NuGet Package Manager";
 
         [Import]
         private ISolutionRestoreWorker SolutionRestoreWorker { get; set; }
@@ -47,6 +50,10 @@ namespace NuGet.SolutionRestoreManager
         // won't get disconnected.
         private EnvDTE.BuildEvents _buildEvents;
 
+        // keep a reference to initialize task so that it can complete
+        // even after InitializeAsync() is done.
+        private JoinableTask _initializationTask;
+
         protected override async Task InitializeAsync(
             CancellationToken cancellationToken, 
             IProgress<ServiceProgressData> progress)
@@ -54,14 +61,27 @@ namespace NuGet.SolutionRestoreManager
             var componentModel = await GetServiceAsync(typeof(SComponentModel)) as IComponentModel;
             componentModel.DefaultCompositionService.SatisfyImportsOnce(this);
 
-            // Accessing DTE without confirming to Main thread because AllowsBackgroundLoading is false which
+            // Start this initialization task but don't await since it will degrade performance.
             // will make sure that this piece is always executed on Main thread.
-            var dte = (EnvDTE.DTE)await GetServiceAsync(typeof(SDTE));
-            _buildEvents = dte.Events.BuildEvents;
-            _buildEvents.OnBuildBegin += BuildEvents_OnBuildBegin;
+            // Besides we don't need to wait here to complete since this will only bind to build event which
+            _initializationTask = ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+            {
+                try
+                {
+                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    var dte = (EnvDTE.DTE)await GetServiceAsync(typeof(SDTE));
+                    _buildEvents = dte.Events.BuildEvents;
+                    _buildEvents.OnBuildBegin += BuildEvents_OnBuildBegin;
 
-            UserAgent.SetUserAgentString(
-                new UserAgentStringBuilder().WithVisualStudioSKU(dte.GetFullVsVersionString()));
+                    UserAgent.SetUserAgentString(
+                        new UserAgentStringBuilder().WithVisualStudioSKU(dte.GetFullVsVersionString()));
+                }
+                catch (Exception ex)
+                {
+                    // log error to activity logs.
+                    ActivityLog.LogError(LogEntrySource, ex.ToString());
+                }
+            });
  
             await base.InitializeAsync(cancellationToken, progress);
         }

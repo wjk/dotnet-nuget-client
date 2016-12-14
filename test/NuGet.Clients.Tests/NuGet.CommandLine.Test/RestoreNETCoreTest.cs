@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -7,7 +8,9 @@ using System.Xml.Linq;
 using Newtonsoft.Json.Linq;
 using NuGet.Frameworks;
 using NuGet.Packaging;
+using NuGet.Packaging.Core;
 using NuGet.Test.Utility;
+using NuGet.Versioning;
 using Xunit;
 
 namespace NuGet.CommandLine.Test
@@ -196,7 +199,7 @@ namespace NuGet.CommandLine.Test
                 // Assert
                 Assert.True(File.Exists(projectA.AssetsFileOutputPath), r.Item2);
                 Assert.True(File.Exists(projectA.TargetsOutput), r.Item2);
-                Assert.False(File.Exists(projectA.PropsOutput), r.Item2);
+                Assert.True(File.Exists(projectA.PropsOutput), r.Item2);
 
                 var assetsFile = projectA.AssetsFile;
                 Assert.Equal(2, assetsFile.Targets.Count);
@@ -244,7 +247,7 @@ namespace NuGet.CommandLine.Test
                 // Assert
                 Assert.True(File.Exists(projectA.AssetsFileOutputPath), r.Item2);
                 Assert.True(File.Exists(projectA.TargetsOutput), r.Item2);
-                Assert.False(File.Exists(projectA.PropsOutput), r.Item2);
+                Assert.True(File.Exists(projectA.PropsOutput), r.Item2);
 
                 var assetsFile = projectA.AssetsFile;
                 Assert.Equal(2, assetsFile.Targets.Count);
@@ -293,7 +296,7 @@ namespace NuGet.CommandLine.Test
                 // Assert
                 Assert.True(File.Exists(projectA.AssetsFileOutputPath), r.Item2);
                 Assert.True(File.Exists(projectA.TargetsOutput), r.Item2);
-                Assert.False(File.Exists(projectA.PropsOutput), r.Item2);
+                Assert.True(File.Exists(projectA.PropsOutput), r.Item2);
 
                 var assetsFile = projectA.AssetsFile;
                 Assert.Equal(2, assetsFile.Targets.Count);
@@ -383,7 +386,7 @@ namespace NuGet.CommandLine.Test
                 // Assert
                 Assert.True(File.Exists(projectA.AssetsFileOutputPath), r.Item2);
                 Assert.True(File.Exists(projectA.TargetsOutput), r.Item2);
-                Assert.False(File.Exists(projectA.PropsOutput), r.Item2);
+                Assert.True(File.Exists(projectA.PropsOutput), r.Item2);
 
                 var assetsFile = projectA.AssetsFile;
                 Assert.Equal(3, assetsFile.Targets.Count);
@@ -971,9 +974,12 @@ namespace NuGet.CommandLine.Test
                 // Act
                 var r = RestoreSolution(pathContext);
 
+                var msbuildTargetsItems = TargetsUtility.GetMSBuildPackageImports(projectA.TargetsOutput);
+                var msbuildPropsItems = TargetsUtility.GetMSBuildPackageImports(projectA.PropsOutput);
+
                 // Assert
-                Assert.False(File.Exists(projectA.TargetsOutput), r.Item2);
-                Assert.False(File.Exists(projectA.PropsOutput), r.Item2);
+                Assert.Equal(0, msbuildTargetsItems.Count);
+                Assert.Equal(0, msbuildPropsItems.Count);
             }
         }
 
@@ -1028,9 +1034,12 @@ namespace NuGet.CommandLine.Test
                 // Act
                 var r = RestoreSolution(pathContext);
 
+                var msbuildTargetsItems = TargetsUtility.GetMSBuildPackageImports(projectA.TargetsOutput);
+                var msbuildPropsItems = TargetsUtility.GetMSBuildPackageImports(projectA.PropsOutput);
+
                 // Assert
-                Assert.False(File.Exists(projectA.TargetsOutput), r.Item2);
-                Assert.False(File.Exists(projectA.PropsOutput), r.Item2);
+                Assert.Equal(0, msbuildTargetsItems.Count);
+                Assert.Equal(0, msbuildPropsItems.Count);
             }
         }
 
@@ -1070,11 +1079,26 @@ namespace NuGet.CommandLine.Test
 
                 // Restore one
                 var r = RestoreSolution(pathContext);
+
+                var msbuildTargetsItems = TargetsUtility.GetMSBuildPackageImports(projectA.TargetsOutput);
+                var msbuildPropsItems = TargetsUtility.GetMSBuildPackageImports(projectA.PropsOutput);
+
+                // Assert
                 Assert.True(File.Exists(projectA.TargetsOutput), r.Item2);
+                Assert.Equal(1, msbuildTargetsItems.Count);
+                Assert.Equal(1, msbuildPropsItems.Count);
+
 
                 // Act
                 r = RestoreSolution(pathContext);
                 Assert.True(File.Exists(projectA.TargetsOutput), r.Item2);
+
+                msbuildTargetsItems = TargetsUtility.GetMSBuildPackageImports(projectA.TargetsOutput);
+                msbuildPropsItems = TargetsUtility.GetMSBuildPackageImports(projectA.PropsOutput);
+
+                Assert.Equal(1, msbuildTargetsItems.Count);
+                Assert.Equal(1, msbuildPropsItems.Count);
+
                 Assert.True(r.Item1 == 0);
             }
         }
@@ -1856,7 +1880,7 @@ namespace NuGet.CommandLine.Test
                 // Assert
                 Assert.True(File.Exists(projectA.AssetsFileOutputPath), r.Item2);
                 Assert.True(File.Exists(projectA.TargetsOutput), r.Item2);
-                Assert.False(File.Exists(projectA.PropsOutput), r.Item2);
+                Assert.True(File.Exists(projectA.PropsOutput), r.Item2);
             }
         }
 
@@ -1989,7 +2013,7 @@ namespace NuGet.CommandLine.Test
                 // Assert
                 Assert.True(File.Exists(projectA.AssetsFileOutputPath), r.Item2);
                 Assert.True(File.Exists(projectA.TargetsOutput), r.Item2);
-                Assert.False(File.Exists(projectA.PropsOutput), r.Item2);
+                Assert.True(File.Exists(projectA.PropsOutput), r.Item2);
 
                 Assert.Equal(NuGetFramework.Parse("net45"), projectA.AssetsFile.Targets.Single().TargetFramework);
             }

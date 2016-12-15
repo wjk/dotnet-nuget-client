@@ -202,6 +202,7 @@ namespace NuGet.Commands
 
             doc.Root.AddFirst(
                 new XElement(Namespace + "PropertyGroup",
+                            new XAttribute("Condition", $" {ExcludeAllCondition} "),
                             GetProperty("RestoreSuccess", success.ToString()),
                             GetProperty("RestoreTool", "NuGet"),
                             GetProperty("NuGetPackageRoot", ReplacePathsWithMacros(repositoryRoot)),
@@ -255,6 +256,9 @@ namespace NuGet.Commands
 
                 if (outputPath != null)
                 {
+                    // Convert / to \
+                    outputPath = LockFileUtils.ToDirectorySeparator(outputPath);
+
                     privateFlag = true;
                     entry.Add(new XElement(Namespace + "CopyToOutputDirectory", "PreserveNewest"));
 
@@ -264,12 +268,12 @@ namespace NuGet.Commands
 
                     if (!string.IsNullOrEmpty(destinationSubDirectory))
                     {
-                        entry.Add("DestinationSubDirectory", destinationSubDirectory + Path.DirectorySeparatorChar);
+                        entry.Add(new XElement(Namespace + "DestinationSubDirectory", destinationSubDirectory + Path.DirectorySeparatorChar));
                     }
                 }
             }
 
-            entry.Add("Private", privateFlag.ToString());
+            entry.Add(new XElement(Namespace + "Private", privateFlag.ToString()));
 
             // Remove contentFile/lang/tfm/ from start of the path
             var linkPath = string.Join(string.Empty + Path.DirectorySeparatorChar, 
@@ -278,7 +282,7 @@ namespace NuGet.Commands
                         .ToArray());
 
 
-            entry.Add("Link", linkPath);
+            entry.Add(new XElement(Namespace + "Link", linkPath));
 
             return entry;
         }

@@ -35,8 +35,6 @@ namespace NuGet.SolutionRestoreManager
         /// </summary>
         public const string PackageGuidString = "2b52ac92-4551-426d-bd34-c6d7d9fdd1c5";
 
-        private const string LogEntrySource = "NuGet Package Manager";
-
         [Import]
         private ISolutionRestoreWorker SolutionRestoreWorker { get; set; }
 
@@ -79,7 +77,7 @@ namespace NuGet.SolutionRestoreManager
                 catch (Exception ex)
                 {
                     // log error to activity logs.
-                    ActivityLog.LogError(LogEntrySource, ex.ToString());
+                    ExceptionHelper.WriteToActivityLog(ex);
                 }
             });
  

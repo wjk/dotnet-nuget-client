@@ -36,21 +36,17 @@ namespace NuGet.SolutionRestoreManager
         public const string PackageGuidString = "2b52ac92-4551-426d-bd34-c6d7d9fdd1c5";
 
         [Import]
-        private ISolutionRestoreWorker SolutionRestoreWorker { get; set; }
+        private Lazy<ISolutionRestoreWorker> SolutionRestoreWorker { get; set; }
 
         [Import]
         private Lazy<ISettings> Settings { get; set; }
 
         [Import]
-        private IVsSolutionManager SolutionManager { get; set; }
+        private Lazy<IVsSolutionManager> SolutionManager { get; set; }
 
         // keeps a reference to BuildEvents so that our event handler
         // won't get disconnected.
         private EnvDTE.BuildEvents _buildEvents;
-
-        // keep a reference to initialize task so that it can complete
-        // even after InitializeAsync() is done.
-        private JoinableTask _initializationTask;
 
         protected override async Task InitializeAsync(
             CancellationToken cancellationToken, 
@@ -59,26 +55,15 @@ namespace NuGet.SolutionRestoreManager
             var componentModel = await GetServiceAsync(typeof(SComponentModel)) as IComponentModel;
             componentModel.DefaultCompositionService.SatisfyImportsOnce(this);
 
-            // Start this initialization task but don't await since it will degrade performance.
-            // will make sure that this piece is always executed on Main thread.
-            // Besides we don't need to wait here to complete since this will only bind to build event which
-            _initializationTask = ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+            await ThreadHelper.JoinableTaskFactory.RunAsync(async () =>
             {
-                try
-                {
-                    await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
-                    var dte = (EnvDTE.DTE)await GetServiceAsync(typeof(SDTE));
-                    _buildEvents = dte.Events.BuildEvents;
-                    _buildEvents.OnBuildBegin += BuildEvents_OnBuildBegin;
+                await ThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                var dte = (EnvDTE.DTE)await GetServiceAsync(typeof(SDTE));
+                _buildEvents = dte.Events.BuildEvents;
+                _buildEvents.OnBuildBegin += BuildEvents_OnBuildBegin;
 
-                    UserAgent.SetUserAgentString(
-                        new UserAgentStringBuilder().WithVisualStudioSKU(dte.GetFullVsVersionString()));
-                }
-                catch (Exception ex)
-                {
-                    // log error to activity logs.
-                    ExceptionHelper.WriteToActivityLog(ex);
-                }
+                UserAgent.SetUserAgentString(
+                    new UserAgentStringBuilder().WithVisualStudioSKU(dte.GetFullVsVersionString()));
             });
  
             await base.InitializeAsync(cancellationToken, progress);
@@ -90,13 +75,13 @@ namespace NuGet.SolutionRestoreManager
             if (Action == EnvDTE.vsBuildAction.vsBuildActionClean)
             {
                 // Clear the project.json restore cache on clean to ensure that the next build restores again
-                SolutionRestoreWorker.CleanCache();
+                SolutionRestoreWorker.Value.CleanCache();
 
                 return;
             }
 
             // Check if solution is DPL enabled, then don't restore
-            if (SolutionManager.IsSolutionDPLEnabled)
+            if (SolutionManager.Value.IsSolutionDPLEnabled)
             {
                 return;
             }
@@ -109,7 +94,7 @@ namespace NuGet.SolutionRestoreManager
             var forceRestore = Action == EnvDTE.vsBuildAction.vsBuildActionRebuildAll;
 
             // Execute
-            SolutionRestoreWorker.Restore(SolutionRestoreRequest.OnBuild(forceRestore));
+            SolutionRestoreWorker.Value.Restore(SolutionRestoreRequest.OnBuild(forceRestore));
         }
 
         /// <summary>

@@ -8,6 +8,7 @@ using Microsoft.VisualStudio.ProjectSystem.Properties;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Utilities;
 using NuGet.ProjectManagement;
+using NuGet.ProjectModel;
 
 namespace NuGet.PackageManagement.VisualStudio
 {
@@ -56,8 +57,12 @@ namespace NuGet.PackageManagement.VisualStudio
                 return false;
             }
 
-            if (!hierarchy.IsCapabilityMatch("CPS") ||
-                !hierarchy.IsCapabilityMatch("PackageReferences"))
+            if (!string.IsNullOrEmpty(context.NuGetProjectStyle) &&
+                !context.NuGetProjectStyle.Equals(ProjectStyle.PackageReference.ToString(), StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+            else if (!hierarchy.IsCapabilityMatch("CPS"))
             {
                 return false;
             }

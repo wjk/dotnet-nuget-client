@@ -778,9 +778,12 @@ namespace NuGet.PackageManagement.VisualStudio
         {
             var settings = ServiceLocator.GetInstance<ISettings>();
 
+            var restoreProjectStyle = VsHierarchyUtility.GetMSBuildProperty(VsHierarchyUtility.ToVsHierarchy(envDTEProject), "RestoreProjectStyle");
+
             var context = new ProjectSystemProviderContext(
                 projectContext ?? EmptyNuGetProjectContext,
-                () => PackagesFolderPathUtility.GetPackagesFolderPath(this, settings));
+                () => PackagesFolderPathUtility.GetPackagesFolderPath(this, settings),
+                restoreProjectStyle);
 
             NuGetProject result;
             if (_projectSystemFactory.TryCreateNuGetProject(envDTEProject, context, out result))

@@ -53,7 +53,7 @@ namespace NuGet.PackageManagement.VisualStudio
                         // 1. reference is null OR
                         // 2. reference is not resolved which means project is not loaded or assembly not found. OR
                         // 3. in DPL case, even deferred projects doesn't have this referenced project.
-                        if (reference3 == null || !reference3.Resolved ||
+                        if (reference3 != null && !reference3.Resolved &&
                             !resolvedProjects.Any(projectName => StringComparer.OrdinalIgnoreCase.Equals(projectName, reference3.Name)))
                         {
                             // Skip missing references and show a warning

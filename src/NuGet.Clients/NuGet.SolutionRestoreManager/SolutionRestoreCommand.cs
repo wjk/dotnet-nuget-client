@@ -27,17 +27,15 @@ namespace NuGet.SolutionRestoreManager
         private const int CommandId = PkgCmdIDList.cmdidRestorePackages;
         private static readonly Guid CommandSet = GuidList.guidNuGetDialogCmdSet;
 
-        [Import]
-        private Lazy<INuGetUILogger> Logger { get; set; }
+        private static Lazy<INuGetUILogger> _logger;
+        private static Lazy<ISolutionRestoreWorker> _solutionRestoreWorker;
+        private static Lazy<ISolutionManager> _solutionManager;
+        private static Lazy<IConsoleStatus> _consoleStatus;
 
-        [Import]
-        private Lazy<ISolutionRestoreWorker> SolutionRestoreWorker { get; set; }
-
-        [Import]
-        private Lazy<ISolutionManager> SolutionManager { get; set; }
-
-        [Import]
-        private Lazy<IConsoleStatus> ConsoleStatus { get; set; }
+        private INuGetUILogger Logger => _logger.Value;
+        private ISolutionRestoreWorker SolutionRestoreWorker => _solutionRestoreWorker.Value;
+        private ISolutionManager SolutionManager => _solutionManager.Value;
+        private IConsoleStatus ConsoleStatus => _consoleStatus.Value;
 
         private readonly IVsMonitorSelection _vsMonitorSelection;
         private uint _solutionNotBuildingAndNotDebuggingContextCookie;
@@ -69,13 +67,26 @@ namespace NuGet.SolutionRestoreManager
                 throw new ArgumentNullException(nameof(package));
             }
 
-            var commandService = await package.GetServiceAsync<IMenuCommandService>();
-            var vsMonitorSelection = await package.GetServiceAsync<IVsMonitorSelection>();
+            var commandService = await package.GetServiceAsync(typeof(IMenuCommandService)) as IMenuCommandService;
+            var vsMonitorSelection = await package.GetServiceAsync(typeof(IVsMonitorSelection)) as IVsMonitorSelection;
 
             _instance = new SolutionRestoreCommand(commandService, vsMonitorSelection);
 
             var componentModel = await package.GetComponentModelAsync();
             componentModel.DefaultCompositionService.SatisfyImportsOnce(_instance);
+
+            _logger = new Lazy<INuGetUILogger>(
+                () => componentModel.GetService<INuGetUILogger>());
+
+            _solutionRestoreWorker = new Lazy<ISolutionRestoreWorker>(
+                () => componentModel.GetService<ISolutionRestoreWorker>());
+
+            _solutionManager = new Lazy<ISolutionManager>(
+                () => componentModel.GetService<ISolutionManager>());
+
+            _consoleStatus = new Lazy<IConsoleStatus>(
+                () => componentModel.GetService<IConsoleStatus>());
+
         }
 
         /// <summary>
@@ -87,15 +98,15 @@ namespace NuGet.SolutionRestoreManager
         /// <param name="e">Event args.</param>
         private void OnRestorePackages(object sender, EventArgs args)
         {
-            if (!SolutionRestoreWorker.Value.IsBusy)
+            if (!SolutionRestoreWorker.IsBusy)
             {
-                SolutionRestoreWorker.Value.Restore(SolutionRestoreRequest.ByMenu());
+                SolutionRestoreWorker.Restore(SolutionRestoreRequest.ByMenu());
             }
             else
             {
                 // QueryStatus should disable the context menu in most of the cases.
                 // Except when NuGetPackage was not loaded before VS won't send QueryStatus.
-                Logger.Value.Log(MessageLevel.Info, Resources.SolutionRestoreFailed_RestoreWorkerIsBusy);
+                Logger.Log(MessageLevel.Info, Resources.SolutionRestoreFailed_RestoreWorkerIsBusy);
             }
         }
 
@@ -114,10 +125,10 @@ namespace NuGet.SolutionRestoreManager
                 // - if the solution is DPL enabled or there are NuGetProjects. This means that there loaded, supported projects
                 // Checking for DPL more is a temporary code until we've the capability to get nuget projects
                 // even in DPL mode. See https://github.com/NuGet/Home/issues/3711
-                command.Enabled = !ConsoleStatus.Value.IsBusy &&
-                    !SolutionRestoreWorker.Value.IsBusy &&
+                command.Enabled = !ConsoleStatus.IsBusy &&
+                    !SolutionRestoreWorker.IsBusy &&
                     IsSolutionExistsAndNotDebuggingAndNotBuilding() &&
-                    (SolutionManager.Value.IsSolutionDPLEnabled || Enumerable.Any<NuGetProject>(SolutionManager.Value.GetNuGetProjects()));
+                    (SolutionManager.IsSolutionDPLEnabled || Enumerable.Any<NuGetProject>(SolutionManager.GetNuGetProjects()));
             });
         }
 

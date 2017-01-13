@@ -275,21 +275,25 @@ namespace NuGetConsole.Host.PowerShell.Implementation
                             UpdateWorkingDirectory();
                             await ExecuteInitScriptsAsync();
 
-                            // Hook up solution events
-                            _solutionManager.SolutionOpened += (o, e) =>
-                                {
-                                    _scriptExecutor.Reset();
+                            // check if PMC console is actually opened, then only hook to solution load/close events.
+                            if (console is IWpfConsole)
+                            {
+                                // Hook up solution events
+                                _solutionManager.SolutionOpened += (o, e) =>
+                                    {
+                                        _scriptExecutor.Reset();
 
                                     // Solution opened event is raised on the UI thread
                                     // Go off the UI thread before calling likely expensive call of ExecuteInitScriptsAsync
                                     // Also, it uses semaphores, do not call it from the UI thread
                                     Task.Run(delegate
-                                        {
-                                            UpdateWorkingDirectory();
-                                            return ExecuteInitScriptsAsync();
-                                        });
-                                };
-                            _solutionManager.SolutionClosed += (o, e) => UpdateWorkingDirectory();
+                                            {
+                                                UpdateWorkingDirectory();
+                                                return ExecuteInitScriptsAsync();
+                                            });
+                                    };
+                                _solutionManager.SolutionClosed += (o, e) => UpdateWorkingDirectory();
+                            }
                             _solutionManager.NuGetProjectAdded += (o, e) => UpdateWorkingDirectoryAndAvailableProjects();
                             _solutionManager.NuGetProjectRenamed += (o, e) => UpdateWorkingDirectoryAndAvailableProjects();
                             _solutionManager.NuGetProjectUpdated += (o, e) => UpdateWorkingDirectoryAndAvailableProjects();

@@ -1,4 +1,4 @@
-function Test-PackageManagerServicesAreAvailableThroughMEF {
+﻿function Test-PackageManagerServicesAreAvailableThroughMEF {
     # Arrange
     $cm = Get-VsComponentModel
 
@@ -701,6 +701,40 @@ function Test-BatchEventsApi
 
     # Assert
     Assert-True $result
+}
+
+function Test-ExecuteInitScriptsPerSolution
+{
+    param($context)
+
+    # Arrange
+    $p = New-ClassLibrary
+    $p | Install-Package entityframework -Version 6.1.3
+    
+    $solutionFile1 = Get-SolutionFullName
+    SaveAs-Solution($solutionFile1)
+	Close-Solution
+
+    $p = New-ClassLibrary
+    $p | Install-Package jquery -Version 1.9
+
+    $solutionFile2 = Get-SolutionFullName
+    SaveAs-Solution($solutionFile2)
+	Close-Solution
+
+    Open-Solution $solutionFile1
+	$p = Get-Project
+    $p | Install-Package entityframework.sqlservercompact -Version 6.1.3
+
+    $cm = Get-VsComponentModel
+    $installerServices = $cm.GetService([NuGet.VisualStudio.IVsPackageInstallerServices])
+
+    # Act
+    $packages = @($installerServices.GetInstalledPackages())
+
+    # Assert
+    Assert-NotNull $packages
+    Assert-AreEqual 3 $packages.Count
 }
 
 function Test-CreateVsPathContextWithConfiguration {

@@ -337,17 +337,12 @@ namespace NuGetConsole.Host.PowerShell.Implementation
             if (Runspace.RunspaceAvailability == RunspaceAvailability.Available)
             {
                 // if there is no solution open, we set the active directory to be user profile folder
-                string targetDir = GetSolutionDirectory();
+                string targetDir = _solutionManager.IsSolutionOpen ?
+                    _solutionManager.SolutionDirectory :
+                    Environment.GetEnvironmentVariable("USERPROFILE");
 
                 Runspace.ChangePSDirectory(targetDir);
             }
-        }
-
-        private string GetSolutionDirectory()
-        {
-            return _solutionManager.IsSolutionOpen ?
-                _solutionManager.SolutionDirectory :
-                Environment.GetEnvironmentVariable("USERPROFILE");
         }
 
         [SuppressMessage("Microsoft.Design", "CA1031:DoNotCatchGeneralExceptionTypes", Justification = "We don't want execution of init scripts to crash our console.")]
@@ -367,8 +362,17 @@ namespace NuGetConsole.Host.PowerShell.Implementation
                     return;
                 }
 
-                // save current solution directory so that we don't execute init scripts for the same solution again.
-                _currentSolutionDirectory = GetSolutionDirectory();
+                // check if we have already run init scripts for this solution, then simply return without executing init scripts
+                if (!string.IsNullOrEmpty(_currentSolutionDirectory) &&
+                    _currentSolutionDirectory.Equals(_solutionManager.SolutionDirectory, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+                else
+                {
+                    // save current solution directory so that we don't execute init scripts for the same solution again.
+                    _currentSolutionDirectory = _solutionManager.SolutionDirectory;
+                }
 
                 // make sure all projects are loaded before start to execute init scripts. Since
                 // projects might not be loaded when DPL is enabled.
@@ -600,18 +604,12 @@ namespace NuGetConsole.Host.PowerShell.Implementation
                 throw new ArgumentNullException(nameof(command));
             }
 
-            var newSolutionDirectory = GetSolutionDirectory();
-
-            // check if we have already run init scripts for this solution, if not then run init scripts before 
-            // executing any script on this solution
-            if (string.IsNullOrEmpty(_currentSolutionDirectory) ||
-                !(string.IsNullOrEmpty(newSolutionDirectory) || _currentSolutionDirectory.Equals(newSolutionDirectory, StringComparison.OrdinalIgnoreCase)))
+            // since install.ps1/uninstall.ps1 could depend on init scripts, so we need to make sure
+            // to run it once for each solution
+            NuGetUIThreadHelper.JoinableTaskFactory.Run(async () =>
             {
-                NuGetUIThreadHelper.JoinableTaskFactory.Run(async () =>
-                {
-                    await ExecuteInitScriptsAsync();
-                });
-            }
+                await ExecuteInitScriptsAsync();
+            });
 
             NuGetEventTrigger.Instance.TriggerEvent(NuGetEvent.PackageManagerConsoleCommandExecutionBegin);
             ActiveConsole = console;

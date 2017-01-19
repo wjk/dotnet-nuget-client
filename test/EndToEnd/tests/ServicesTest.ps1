@@ -708,9 +708,13 @@ function Test-ExecuteInitScriptsPerSolution
     param($context)
 
     # Arrange
+    $global:PackageInitPS1Var = 0
     $p = New-ClassLibrary
-    $p | Install-Package entityframework -Version 6.1.3
     
+    Install-Package PackageInitPS1 -Project $p.Name -Source $context.RepositoryPath
+    
+    Assert-True ($global:PackageInitPS1Var -eq 1)
+
     $solutionFile1 = Get-SolutionFullName
     SaveAs-Solution($solutionFile1)
 	Close-Solution
@@ -722,19 +726,32 @@ function Test-ExecuteInitScriptsPerSolution
     SaveAs-Solution($solutionFile2)
 	Close-Solution
 
+    # Act
     Open-Solution $solutionFile1
 	$p = Get-Project
-    $p | Install-Package entityframework.sqlservercompact -Version 6.1.3
-
-    $cm = Get-VsComponentModel
-    $installerServices = $cm.GetService([NuGet.VisualStudio.IVsPackageInstallerServices])
-
-    # Act
-    $packages = @($installerServices.GetInstalledPackages())
+    $p | Install-Package jquery -Version 1.9
 
     # Assert
-    Assert-NotNull $packages
-    Assert-AreEqual 3 $packages.Count
+    Assert-True ($global:PackageInitPS1Var -eq 1)
+}
+
+function Test-ExecuteInitScriptsOnlyOnce
+{
+    param($context)
+
+    # Arrange
+    $global:PackageInitPS1Var = 0
+    $p = New-ClassLibrary
+    
+    Install-Package PackageInitPS1 -Project $p.Name -Source $context.RepositoryPath
+    
+    Assert-True ($global:PackageInitPS1Var -eq 1)
+
+    # Act
+    $p | Install-Package jquery -Version 1.9
+
+    # Assert
+    Assert-True ($global:PackageInitPS1Var -eq 1)
 }
 
 function Test-CreateVsPathContextWithConfiguration {

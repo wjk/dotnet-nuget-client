@@ -8,9 +8,9 @@ namespace NuGet.ContentModel
 {
     public class SelectionCriteriaBuilder
     {
-        public IReadOnlyDictionary<string, ContentPropertyDefinition> Properties { get; }
+        public IDictionary<string, ContentPropertyDefinition> Properties { get; }
 
-        public SelectionCriteriaBuilder(IReadOnlyDictionary<string, ContentPropertyDefinition> properties)
+        public SelectionCriteriaBuilder(IDictionary<string, ContentPropertyDefinition> properties)
         {
             Properties = properties;
         }

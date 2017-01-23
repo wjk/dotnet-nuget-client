@@ -9,7 +9,7 @@ namespace NuGet.ContentModel.Infrastructure
     public class PatternExpression
     {
         private readonly List<Segment> _segments = new List<Segment>();
-        private readonly IReadOnlyDictionary<string, object> _defaults;
+        private readonly IDictionary<string, object> _defaults;
         private readonly PatternTable _table;
 
         public PatternExpression(PatternDefinition pattern)
@@ -45,7 +45,7 @@ namespace NuGet.ContentModel.Infrastructure
             }
         }
 
-        public ContentItem Match(string path, IReadOnlyDictionary<string, ContentPropertyDefinition> propertyDefinitions)
+        public ContentItem Match(string path, IDictionary<string, ContentPropertyDefinition> propertyDefinitions)
         {
             var item = new ContentItem
                 {
@@ -69,7 +69,11 @@ namespace NuGet.ContentModel.Infrastructure
                 // Apply defaults from the pattern
                 foreach (var pair in _defaults)
                 {
-                    item.Properties[pair.Key] = pair.Value;
+                    if (item.Properties == null)
+                    {
+                        item.Properties = new Dictionary<string, object>();
+                    }
+                    item.Properties.Add(pair);
                 }
                 return item;
             }
@@ -78,7 +82,7 @@ namespace NuGet.ContentModel.Infrastructure
 
         private abstract class Segment
         {
-            internal abstract bool TryMatch(ContentItem item, IReadOnlyDictionary<string, ContentPropertyDefinition> propertyDefinitions, int startIndex, out int endIndex);
+            internal abstract bool TryMatch(ContentItem item, IDictionary<string, ContentPropertyDefinition> propertyDefinitions, int startIndex, out int endIndex);
         }
 
         private class LiteralSegment : Segment
@@ -92,14 +96,13 @@ namespace NuGet.ContentModel.Infrastructure
 
             internal override bool TryMatch(
                 ContentItem item,
-                IReadOnlyDictionary<string, ContentPropertyDefinition> propertyDefinitions,
+                IDictionary<string, ContentPropertyDefinition> propertyDefinitions,
                 int startIndex,
                 out int endIndex)
             {
                 if (item.Path.Length >= startIndex + _literal.Length)
                 {
-                    var substring = item.Path.Substring(startIndex, _literal.Length);
-                    if (string.Equals(_literal, substring, StringComparison.OrdinalIgnoreCase))
+                    if (string.Equals(_literal, item.Path.Substring(startIndex, _literal.Length), StringComparison.OrdinalIgnoreCase))
                     {
                         endIndex = startIndex + _literal.Length;
                         return true;
@@ -125,7 +128,7 @@ namespace NuGet.ContentModel.Infrastructure
                 _table = table;
             }
 
-            internal override bool TryMatch(ContentItem item, IReadOnlyDictionary<string, ContentPropertyDefinition> propertyDefinitions, int startIndex, out int endIndex)
+            internal override bool TryMatch(ContentItem item, IDictionary<string, ContentPropertyDefinition> propertyDefinitions, int startIndex, out int endIndex)
             {
                 ContentPropertyDefinition propertyDefinition;
                 if (!propertyDefinitions.TryGetValue(_token, out propertyDefinition))
@@ -140,12 +143,17 @@ namespace NuGet.ContentModel.Infrastructure
                     {
                         break;
                     }
-                    var substring = item.Path.Substring(startIndex, delimiterIndex - startIndex);
                     object value;
-                    if (propertyDefinition.TryLookup(substring, _table, out value))
+                    if (propertyDefinition.TryLookup(
+                        item.Path.Substring(startIndex, delimiterIndex - startIndex), _table, out value))
                     {
                         if (!_matchOnly)
                         {
+                            if (item.Properties == null)
+                            {
+                                item.Properties = new Dictionary<string, object>();
+                            }
+
                             item.Properties.Add(_token, value);
                         }
                         endIndex = delimiterIndex;

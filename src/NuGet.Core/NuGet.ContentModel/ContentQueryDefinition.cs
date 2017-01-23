@@ -12,27 +12,27 @@ namespace NuGet.ContentModel
     /// </summary>
     public class PatternSet
     {
-        public PatternSet(IReadOnlyDictionary<string, ContentPropertyDefinition> properties, IEnumerable<PatternDefinition> groupPatterns, IEnumerable<PatternDefinition> pathPatterns)
+        public PatternSet(IDictionary<string, ContentPropertyDefinition> properties, IList<PatternDefinition> groupPatterns, IList<PatternDefinition> pathPatterns)
         {
-            GroupPatterns = groupPatterns?.ToList()?.AsReadOnly() ?? Enumerable.Empty<PatternDefinition>();
-            PathPatterns = pathPatterns?.ToList()?.AsReadOnly() ?? Enumerable.Empty<PatternDefinition>();
-            PropertyDefinitions = properties;
+            GroupPatterns = groupPatterns ?? new List<PatternDefinition>();
+            PathPatterns = pathPatterns ?? new List<PatternDefinition>();
+            PropertyDefinitions = properties ?? new Dictionary<string, ContentPropertyDefinition>();
         }
 
         /// <summary>
         /// Patterns used to select a group of items that matches the criteria
         /// </summary>
-        public IEnumerable<PatternDefinition> GroupPatterns { get; }
+        public IList<PatternDefinition> GroupPatterns { get; }
 
         /// <summary>
         /// Patterns used to select individual items that match the criteria
         /// </summary>
-        public IEnumerable<PatternDefinition> PathPatterns { get; }
+        public IList<PatternDefinition> PathPatterns { get; }
 
         /// <summary>
         /// Property definitions used for matching patterns
         /// </summary>
-        public IReadOnlyDictionary<string, ContentPropertyDefinition> PropertyDefinitions { get; set; }
+        public IDictionary<string, ContentPropertyDefinition> PropertyDefinitions { get; set; }
     }
 
     /// <summary>
@@ -47,7 +47,7 @@ namespace NuGet.ContentModel
     public class PatternDefinition
     {
         public string Pattern { get; }
-        public IReadOnlyDictionary<string, object> Defaults { get; }
+        public IDictionary<string, object> Defaults { get; }
 
         /// <summary>
         /// Replacement token table.
@@ -55,24 +55,24 @@ namespace NuGet.ContentModel
         public PatternTable Table { get; }
 
         public PatternDefinition(string pattern)
-            : this(pattern, table: null, defaults: Enumerable.Empty<KeyValuePair<string, object>>())
+            : this(pattern, table: null, defaults: new Dictionary<string, object>())
         {
         }
 
         public PatternDefinition(string pattern, PatternTable table)
-            : this(pattern, table, Enumerable.Empty<KeyValuePair<string, object>>())
+            : this(pattern, table, new Dictionary<string, object>())
         {
         }
 
         public PatternDefinition(
             string pattern,
             PatternTable table,
-            IEnumerable<KeyValuePair<string, object>> defaults)
+            IDictionary<string, object> defaults)
         {
             Pattern = pattern;
 
             Table = table;
-            Defaults = new ReadOnlyDictionary<string, object>(defaults.ToDictionary(p => p.Key, p => p.Value));
+            Defaults = defaults;
         }
 
         public static implicit operator PatternDefinition(string pattern)

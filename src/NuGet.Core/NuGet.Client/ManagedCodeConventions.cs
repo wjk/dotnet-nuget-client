@@ -57,33 +57,31 @@ namespace NuGet.Client
             = new Dictionary<string, NuGetFramework>(StringComparer.Ordinal);
 
         public ManagedCodeCriteria Criteria { get; }
-        public IReadOnlyDictionary<string, ContentPropertyDefinition> Properties { get; }
+        public IDictionary<string, ContentPropertyDefinition> Properties { get; }
         public ManagedCodePatterns Patterns { get; }
 
         public ManagedCodeConventions(RuntimeGraph runtimeGraph)
         {
             _runtimeGraph = runtimeGraph;
 
-            var props = new Dictionary<string, ContentPropertyDefinition>();
-            props[AnyProperty.Name] = AnyProperty;
-            props[AssemblyProperty.Name] = AssemblyProperty;
-            props[LocaleProperty.Name] = LocaleProperty;
-            props[MSBuildProperty.Name] = MSBuildProperty;
-            props[SatelliteAssemblyProperty.Name] = SatelliteAssemblyProperty;
-            props[CodeLanguageProperty.Name] = CodeLanguageProperty;
+            Properties = new Dictionary<string, ContentPropertyDefinition>();
+            Properties[AnyProperty.Name] = AnyProperty;
+            Properties[AssemblyProperty.Name] = AssemblyProperty;
+            Properties[LocaleProperty.Name] = LocaleProperty;
+            Properties[MSBuildProperty.Name] = MSBuildProperty;
+            Properties[SatelliteAssemblyProperty.Name] = SatelliteAssemblyProperty;
+            Properties[CodeLanguageProperty.Name] = CodeLanguageProperty;
 
-            props[PropertyNames.RuntimeIdentifier] = new ContentPropertyDefinition(
+            Properties[PropertyNames.RuntimeIdentifier] = new ContentPropertyDefinition(
                 PropertyNames.RuntimeIdentifier,
                 parser: (o, t) => o, // Identity parser, all strings are valid runtime ids :)
                 compatibilityTest: RuntimeIdentifier_CompatibilityTest);
 
-            props[PropertyNames.TargetFrameworkMoniker] = new ContentPropertyDefinition(
+            Properties[PropertyNames.TargetFrameworkMoniker] = new ContentPropertyDefinition(
                 PropertyNames.TargetFrameworkMoniker,
                 parser: TargetFrameworkName_Parser,
                 compatibilityTest: TargetFrameworkName_CompatibilityTest,
                 compareTest: TargetFrameworkName_NearestCompareTest);
-
-            Properties = new ReadOnlyDictionary<string, ContentPropertyDefinition>(props);
 
             Criteria = new ManagedCodeCriteria(this);
             Patterns = new ManagedCodePatterns(this);

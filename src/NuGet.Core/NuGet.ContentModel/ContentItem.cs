@@ -8,7 +8,7 @@ namespace NuGet.ContentModel
     public class ContentItem
     {
         public string Path { get; set; }
-        public IDictionary<string, object> Properties { get; } = new Dictionary<string, object>();
+        public IDictionary<string, object> Properties { get; set; }
 
         public override string ToString()
         {

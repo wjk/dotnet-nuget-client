@@ -910,16 +910,17 @@ namespace NuGet.PackageManagement.VisualStudio
         private NuGetProject CreateNuGetProject(Project envDTEProject, INuGetProjectContext projectContext = null)
         {
             var settings = ServiceLocator.GetInstance<ISettings>();
-            var vsHierarchy = VsHierarchyUtility.ToVsHierarchy(envDTEProject);
+            var buildPropertyStorage = VsHierarchyUtility.ToVsHierarchy(envDTEProject) as IVsBuildPropertyStorage;
+
             // read MSBuild property RestoreProjectStyle which can be set to any NuGet project sytle
             // and pass it on to NugetFactory which can pass it to each NuGet project provider to consume.
-            var restoreProjectStyle = VsHierarchyUtility.GetMSBuildProperty(vsHierarchy, 
+            var restoreProjectStyle = VsHierarchyUtility.GetMSBuildProperty(buildPropertyStorage, 
                 ProjectSystemProviderContext.RestoreProjectStyle);
 
-            var targetFramework = VsHierarchyUtility.GetMSBuildProperty(vsHierarchy, 
+            var targetFramework = VsHierarchyUtility.GetMSBuildProperty(buildPropertyStorage, 
                 ProjectSystemProviderContext.TargetFramework);
 
-            var targetFrameworks = VsHierarchyUtility.GetMSBuildProperty(vsHierarchy, 
+            var targetFrameworks = VsHierarchyUtility.GetMSBuildProperty(buildPropertyStorage, 
                 ProjectSystemProviderContext.TargetFrameworks);
 
             var msBuildProperties = new Dictionary<string, string> {

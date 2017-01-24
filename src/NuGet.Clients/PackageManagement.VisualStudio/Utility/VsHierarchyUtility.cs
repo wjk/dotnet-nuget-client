@@ -38,11 +38,10 @@ namespace NuGet.PackageManagement.VisualStudio
             return hierarchy;
         }
 
-        public static string GetMSBuildProperty(IVsHierarchy pHierarchy, string name)
+        public static string GetMSBuildProperty(IVsBuildPropertyStorage buildPropertyStorage, string name)
         {
             ThreadHelper.ThrowIfNotOnUIThread();
 
-            var buildPropertyStorage = pHierarchy as IVsBuildPropertyStorage;
             string output = null;
 
             if (buildPropertyStorage != null)

@@ -21,6 +21,7 @@ using EnvDTEProject = EnvDTE.Project;
 using EnvDTEProjectItems = EnvDTE.ProjectItems;
 using EnvDTEProperty = EnvDTE.Property;
 using ThreadHelper = Microsoft.VisualStudio.Shell.ThreadHelper;
+using VSLangProj150;
 
 namespace NuGet.PackageManagement.VisualStudio
 {
@@ -176,6 +177,18 @@ namespace NuGet.PackageManagement.VisualStudio
                 }
 
                 return _targetFramework;
+            }
+        }
+
+        public dynamic VSProject4
+        {
+            get
+            {
+                return NuGetUIThreadHelper.JoinableTaskFactory.Run(async delegate
+                {
+                    await NuGetUIThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                    return EnvDTEProject.Object as VSProject4;
+                });
             }
         }
 

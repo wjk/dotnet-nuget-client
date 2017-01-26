@@ -225,6 +225,11 @@ namespace NuGet.Packaging
             return GetFileGroups(PackagingConstants.Folders.Content);
         }
 
+        public IEnumerable<FrameworkSpecificGroup> GetContentItems(string folderName)
+        {
+            return GetFileGroups(folderName);
+        }
+
         public IEnumerable<PackageDependencyGroup> GetPackageDependencies()
         {
             return NuspecReader.GetDependencyGroups();
@@ -233,6 +238,11 @@ namespace NuGet.Packaging
         public IEnumerable<FrameworkSpecificGroup> GetLibItems()
         {
             return GetFileGroups(PackagingConstants.Folders.Lib);
+        }
+
+        public IEnumerable<FrameworkSpecificGroup> GetLibItems(string folderName)
+        {
+            return GetFileGroups(folderName);
         }
 
         /// <summary>

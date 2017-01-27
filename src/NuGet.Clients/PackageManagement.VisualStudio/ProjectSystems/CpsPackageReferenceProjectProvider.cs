@@ -7,6 +7,7 @@ using Microsoft.VisualStudio.ProjectSystem;
 using Microsoft.VisualStudio.ProjectSystem.Properties;
 using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Utilities;
+using NuGet.PackageManagement.UI;
 using NuGet.ProjectManagement;
 using NuGet.ProjectModel;
 
@@ -21,6 +22,11 @@ namespace NuGet.PackageManagement.VisualStudio
     public class CpsPackageReferenceProjectProvider : IProjectSystemProvider
     {
         private readonly IProjectSystemCache _projectSystemCache;
+
+        // Reason it's lazy<object> is because we don't want to load any CPS assemblies untill
+        // we're really going to use any of CPS api. Which is why we also don't use nameof or typeof apis.
+        [Import("Microsoft.VisualStudio.ProjectSystem.IProjectServiceAccessor")]
+        private Lazy<object> ProjectServiceAccessor { get; set; }
 
         [ImportingConstructor]
         public CpsPackageReferenceProjectProvider(IProjectSystemCache projectSystemCache)
@@ -85,6 +91,9 @@ namespace NuGet.PackageManagement.VisualStudio
             {
                 return false;
             }
+
+            // Lazy load the CPS enabled JoinableTaskFactory for the UI.
+            NuGetUIThreadHelper.SetJoinableTaskFactoryFromService(ProjectServiceAccessor.Value as IProjectServiceAccessor);
 
             var projectNames = ProjectNames.FromDTEProject(dteProject);
             var fullProjectPath = EnvDTEProjectUtility.GetFullProjectPath(dteProject);

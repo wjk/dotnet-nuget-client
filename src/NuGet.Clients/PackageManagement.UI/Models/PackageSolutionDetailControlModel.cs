@@ -396,8 +396,8 @@ namespace NuGet.PackageManagement.UI
             var selectedProjectsName = Projects.Where(p => p.IsSelected).Select(p => p.NuGetProject.GetMetadata<string>(NuGetProjectMetadataKeys.Name));
 
             // allowed version ranges for selected list of projects
-            var allowedVersionsRange = _projectVersionRangeDict.Where(kvp => selectedProjectsName.Contains(kvp.Key, StringComparer.OrdinalIgnoreCase))
-                .Select(kvp => kvp.Value);
+            var allowedVersionsRange = _projectVersionConstraints.Where(e => selectedProjectsName.Contains(e.ProjectName, StringComparer.OrdinalIgnoreCase))
+                .Select(e => e.VersionRange);
             allowedVersionsRange = allowedVersionsRange.Where(v => v != null);
 
             // if version constraints exist then merge all the ranges and return common range which satisfies all

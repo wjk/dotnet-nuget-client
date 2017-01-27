@@ -118,7 +118,7 @@ namespace NuGet.PackageManagement.UI
             }
 
             // null, if no version constraint defined in package.config
-            var allowedVersions = _projectVersionRangeDict.Select(kvp => kvp.Value).FirstOrDefault() ?? VersionRange.All;
+            var allowedVersions = _projectVersionConstraints.Select(e => e.VersionRange).FirstOrDefault() ?? VersionRange.All;
             var allVersionsAllowed = allVersions.Where(v => allowedVersions.Satisfies(v)).ToArray();
 
             // null, if all versions are allowed to be install or update
@@ -162,7 +162,15 @@ namespace NuGet.PackageManagement.UI
                     _versions.Add(null);
                 }
 
-                _versions.Add(new DisplayVersion(new VersionRange(new NuGetVersion("0.0.0")), Resources.Version_Blocked, false));
+                var blockedMessage = Resources.Version_Blocked_Generic;
+
+                if (_projectVersionConstraints.All(e => e.IsPackagesConfig))
+                {
+                    // Use the packages.config specific message.
+                    blockedMessage = Resources.Version_Blocked;
+                }
+
+                _versions.Add(new DisplayVersion(new VersionRange(new NuGetVersion(0, 0, 0)), blockedMessage, isCurrentInstalled: false));
             }
 
             // add all the versions blocked because of version constraint in package.config

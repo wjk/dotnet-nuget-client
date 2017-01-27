@@ -58,6 +58,7 @@
     <Compile Include="Models\LoadingStatusViewModel.cs" />
     <Compile Include="Models\PackageSearchMetadataCache.cs" />
     <Compile Include="Models\PackageSearchStatus.cs" />
+    <Compile Include="Models\ProjectVersionConstraint.cs" />
     <Compile Include="PackageManagementFormat.cs" />
     <Compile Include="Prompts\DotnetDeprecatedPrompt.cs" />
     <Compile Include="Resources\Domain.cs" />

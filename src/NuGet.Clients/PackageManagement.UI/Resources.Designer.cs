@@ -1413,11 +1413,29 @@ namespace NuGet.PackageManagement.UI {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to {0} (AutoReferenced).
+        /// </summary>
+        public static string Version_AutoReferenced {
+            get {
+                return ResourceManager.GetString("Version_AutoReferenced", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Blocked by package.config.
         /// </summary>
         public static string Version_Blocked {
             get {
                 return ResourceManager.GetString("Version_Blocked", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Blocked.
+        /// </summary>
+        public static string Version_Blocked_Generic {
+            get {
+                return ResourceManager.GetString("Version_Blocked_Generic", resourceCulture);
             }
         }
         

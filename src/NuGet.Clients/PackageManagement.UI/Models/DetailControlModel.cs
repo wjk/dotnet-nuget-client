@@ -34,9 +34,12 @@ namespace NuGet.PackageManagement.UI
         [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Design", "CA1051:DoNotDeclareVisibleInstanceFields")]
         protected ItemFilter _filter;
 
-        protected Dictionary<string, VersionRange> _projectVersionRangeDict;
+        // Project constraints on the allowed package versions.
+        protected List<ProjectVersionConstraint> _projectVersionConstraints;
 
         private Dictionary<NuGetVersion, DetailedPackageMetadata> _metadataDict;
+
+        private static readonly NuGetVersion EmptyVersion = new NuGetVersion(0, 0, 0);
 
         protected DetailControlModel(IEnumerable<NuGetProject> nugetProjects)
         {
@@ -77,18 +80,67 @@ namespace NuGet.PackageManagement.UI
 
             var getVersionsTask = searchResultPackage.GetVersionsAsync();
 
-            _projectVersionRangeDict = new Dictionary<string, VersionRange>(StringComparer.OrdinalIgnoreCase);
+            var cacheContext = new DependencyGraphCacheContext();
+            _projectVersionConstraints = new List<ProjectVersionConstraint>();
 
-            // filter project.json based projects since allowedVersion is only applicable to packages.config
-            var packagesConfigProjects = _nugetProjects.Where(project => !(project is INuGetIntegratedProject));
+            var projects = _nugetProjects.Where(project => !(project is ProjectKNuGetProjectBase)).ToArray();
 
-            foreach (var project in packagesConfigProjects)
+            foreach (var project in projects)
             {
-                // cache allowed version range for each nuget project for current selected package
-                var packageReference = (await project.GetInstalledPackagesAsync(CancellationToken.None))
-                    .FirstOrDefault(r => StringComparer.OrdinalIgnoreCase.Equals(r.PackageIdentity.Id, searchResultPackage.Id));
+                if (project is MSBuildNuGetProject)
+                {
+                    // cache allowed version range for each nuget project for current selected package
+                    var packageReference = (await project.GetInstalledPackagesAsync(CancellationToken.None))
+                        .FirstOrDefault(r => StringComparer.OrdinalIgnoreCase.Equals(r.PackageIdentity.Id, searchResultPackage.Id));
 
-                _projectVersionRangeDict.Add(project.GetMetadata<string>(NuGetProjectMetadataKeys.Name), packageReference?.AllowedVersions);
+                    var range = packageReference?.AllowedVersions;
+
+                    if (range != null && !VersionRange.All.Equals(range))
+                    {
+                        var constaint = new ProjectVersionConstraint()
+                        {
+                            ProjectName = project.GetMetadata<string>(NuGetProjectMetadataKeys.Name),
+                            VersionRange = range,
+                            IsPackagesConfig = true,
+                        };
+
+                        _projectVersionConstraints.Add(constaint);
+                    }
+                }
+                else if (project is BuildIntegratedNuGetProject)
+                {
+                    var graphProvider = (IDependencyGraphProject)project;
+                    var specs = await graphProvider.GetPackageSpecsAsync(cacheContext);
+
+                    // First the lowest auto referenced version of this package.
+                    var autoReferenced = specs.SelectMany(spec =>
+                                            spec.TargetFrameworks.SelectMany(e => e.Dependencies)
+                                            .Concat(spec.Dependencies))
+                                        .Where(e => e.AutoReferenced
+                                            && StringComparer.OrdinalIgnoreCase.Equals(searchResultPackage.Id, e.Name))
+                                        .OrderBy(e => e.LibraryRange.VersionRange?.MinVersion ?? EmptyVersion)
+                                        .FirstOrDefault();
+
+                    if (autoReferenced != null)
+                    {
+                        // Add constraint for auto referenced package.
+                        var minVersion = autoReferenced.LibraryRange.VersionRange.MinVersion ?? EmptyVersion;
+
+                        var constaint = new ProjectVersionConstraint()
+                        {
+                            ProjectName = project.GetMetadata<string>(NuGetProjectMetadataKeys.Name),
+                            VersionRange = new VersionRange(
+                                minVersion: minVersion,
+                                includeMinVersion: true,
+                                maxVersion: minVersion,
+                                includeMaxVersion: true),
+
+                            IsAutoReferenced = true,
+                        };
+
+                        _projectVersionConstraints.Add(constaint);
+                    }
+                }
             }
 
             // Add Current package version to package versions list.

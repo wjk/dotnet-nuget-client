@@ -622,6 +622,6 @@ Packages installed into Website projects will not be restored during build. Cons
     <comment>0 - package version</comment>
   </data>
   <data name="Version_Blocked_Generic" xml:space="preserve">
-    <value>Blocked</value>
+    <value>Blocked by project</value>
   </data>
 </root>

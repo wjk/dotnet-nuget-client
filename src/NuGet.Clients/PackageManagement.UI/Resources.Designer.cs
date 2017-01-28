@@ -1431,7 +1431,7 @@ namespace NuGet.PackageManagement.UI {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Blocked.
+        ///   Looks up a localized string similar to Blocked by project.
         /// </summary>
         public static string Version_Blocked_Generic {
             get {

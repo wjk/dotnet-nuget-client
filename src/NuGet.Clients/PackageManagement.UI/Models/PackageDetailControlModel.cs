@@ -151,35 +151,23 @@ namespace NuGet.PackageManagement.UI
             // first add all the available versions to be updated
             foreach (var version in allVersionsAllowed)
             {
-                _versions.Add(new DisplayVersion(version, string.Empty, isCurrentInstalled: version.Equals(installedVersion)));
-            }
+                var installed = version.Equals(installedVersion);
+                var autoReferenced = false;
 
-            // add a separator
-            if (blockedVersions.Any())
-            {
-                if (_versions.Count > 0)
+                if (installed && _projectVersionConstraints.Any(e => e.IsAutoReferenced && e.VersionRange?.Satisfies(version) == true))
                 {
-                    _versions.Add(null);
+                    // do not allow auto referenced packatges
+                    autoReferenced = true;
                 }
 
-                var blockedMessage = Resources.Version_Blocked_Generic;
-
-                if (_projectVersionConstraints.All(e => e.IsPackagesConfig))
-                {
-                    // Use the packages.config specific message.
-                    blockedMessage = Resources.Version_Blocked;
-                }
-
-                _versions.Add(new DisplayVersion(new VersionRange(new NuGetVersion(0, 0, 0)), blockedMessage, isCurrentInstalled: false));
+                _versions.Add(new DisplayVersion(version, string.Empty, isCurrentInstalled: installed, autoReferenced: autoReferenced));
             }
 
-            // add all the versions blocked because of version constraint in package.config
-            bool isBlockedVersionEnabled = Options.SelectedDependencyBehavior.Behavior == DependencyBehavior.Ignore;
+            // Disable controls if this is an auto referenced package.
+            SetAutoReferencedCheck(InstalledVersion);
 
-            foreach (var version in blockedVersions)
-            {
-                _versions.Add(new DisplayVersion(version, string.Empty, isBlockedVersionEnabled));
-            }
+            // Add disabled versions
+            AddBlockedVersions(blockedVersions);
 
             SelectVersion();
 

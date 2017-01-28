@@ -181,15 +181,21 @@ namespace NuGet.PackageManagement.UI
                     _versions.Add(null);
                 }
 
-                _versions.Add(new DisplayVersion(new VersionRange(new NuGetVersion("0.0.0")), Resources.Version_Blocked, false));
+                var blockedMessage = Resources.Version_Blocked_Generic;
+
+                if (_projectVersionConstraints.All(e => e.IsPackagesConfig))
+                {
+                    // Use the packages.config specific message.
+                    blockedMessage = Resources.Version_Blocked;
+                }
+
+                _versions.Add(new DisplayVersion(new VersionRange(new NuGetVersion(0, 0, 0)), blockedMessage, isValidVersion: false));
             }
 
-            // add versions which are blocked because of version constraint in package.config
-            bool isBlockedVersionEnabled = Options.SelectedDependencyBehavior.Behavior == Resolver.DependencyBehavior.Ignore;
-
+            // add all the versions blocked to disable the update button
             foreach (var version in blockedVersions)
             {
-                _versions.Add(new DisplayVersion(version, string.Empty, isBlockedVersionEnabled));
+                _versions.Add(new DisplayVersion(version, string.Empty, isValidVersion: false));
             }
 
             SelectVersion();

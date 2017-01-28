@@ -420,6 +420,22 @@ namespace NuGet.PackageManagement.UI
 
         public abstract bool IsSolution { get; }
 
+        private string _optionsBlockedMessage;
+
+        public virtual string OptionsBlockedMessage
+        {
+            get
+            {
+                return _optionsBlockedMessage;
+            }
+
+            set
+            {
+                _optionsBlockedMessage = value;
+                OnPropertyChanged(nameof(OptionsBlockedMessage));
+            }
+        }
+
         private Options _options;
 
         public Options Options
@@ -437,6 +453,49 @@ namespace NuGet.PackageManagement.UI
             get
             {
                 return _nugetProjects;
+            }
+        }
+
+        protected void AddBlockedVersions(NuGetVersion[] blockedVersions)
+        {
+            // add a separator
+            if (blockedVersions.Length > 0)
+            {
+                if (_versions.Count > 0)
+                {
+                    _versions.Add(null);
+                }
+
+                var blockedMessage = Resources.Version_Blocked_Generic;
+
+                if (_projectVersionConstraints.All(e => e.IsPackagesConfig))
+                {
+                    // Use the packages.config specific message.
+                    blockedMessage = Resources.Version_Blocked;
+                }
+
+                _versions.Add(new DisplayVersion(new VersionRange(new NuGetVersion(0, 0, 0)), blockedMessage, isValidVersion: false));
+            }
+
+            // add all the versions blocked to disable the update button
+            foreach (var version in blockedVersions)
+            {
+                _versions.Add(new DisplayVersion(version, string.Empty, isValidVersion: false));
+            }
+        }
+
+        protected void SetAutoReferencedCheck(NuGetVersion installedVersion)
+        {
+            var autoReferenced = installedVersion != null
+                    && _projectVersionConstraints.Any(e => e.IsAutoReferenced);
+
+            if (autoReferenced)
+            {
+                OptionsBlockedMessage = "AutoReferenced";
+            }
+            else
+            {
+                OptionsBlockedMessage = null;
             }
         }
     }

@@ -492,10 +492,20 @@ namespace NuGet.PackageManagement.UI
             if (autoReferenced)
             {
                 OptionsBlockedMessage = "AutoReferenced";
+
+                if (_searchResultPackage != null)
+                {
+                    _searchResultPackage.AutoReferenced = true;
+                }
             }
             else
             {
                 OptionsBlockedMessage = null;
+
+                if (_searchResultPackage != null)
+                {
+                    _searchResultPackage.AutoReferenced = false;
+                }
             }
         }
     }

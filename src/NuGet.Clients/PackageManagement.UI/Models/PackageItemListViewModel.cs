@@ -92,6 +92,22 @@ namespace NuGet.PackageManagement.UI
             }
         }
 
+        // True if the package is AutoReferenced
+        private bool _autoReferenced;
+        public bool AutoReferenced
+        {
+            get
+            {
+                return _autoReferenced;
+            }
+            set
+            {
+                _autoReferenced = value;
+                OnPropertyChanged(nameof(AutoReferenced));
+                OnPropertyChanged(nameof(Status));
+            }
+        }
+
         private string _latestVersionToolTip;
 
         public string LatestVersionToolTip
@@ -246,7 +262,7 @@ namespace NuGet.PackageManagement.UI
                     await NuGetUIThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
 
                     LatestVersion = result;
-                    Status = GetPackageStatus(LatestVersion, InstalledVersion);
+                    Status = GetPackageStatus(LatestVersion, InstalledVersion, AutoReferenced);
                 });
             }
         }
@@ -275,12 +291,21 @@ namespace NuGet.PackageManagement.UI
             OnPropertyChanged(nameof(Status));
         }
 
-        private static PackageStatus GetPackageStatus(NuGetVersion latestAvailableVersion, NuGetVersion installedVersion)
+        private static PackageStatus GetPackageStatus(
+            NuGetVersion latestAvailableVersion,
+            NuGetVersion installedVersion,
+            bool autoReferenced)
         {
             var status = PackageStatus.NotInstalled;
-            if (installedVersion != null)
+
+            if (autoReferenced)
+            {
+                status = PackageStatus.AutoReferenced;
+            }
+            else if (installedVersion != null)
             {
                 status = PackageStatus.Installed;
+
                 if (VersionComparer.VersionRelease.Compare(installedVersion, latestAvailableVersion) < 0)
                 {
                     status = PackageStatus.UpdateAvailable;

@@ -9,6 +9,7 @@ using Microsoft.VisualStudio.Shell;
 using Microsoft.VisualStudio.Utilities;
 using NuGet.ProjectManagement;
 using NuGet.ProjectModel;
+using Microsoft.VisualStudio.Shell.Interop;
 
 namespace NuGet.PackageManagement.VisualStudio
 {
@@ -20,6 +21,10 @@ namespace NuGet.PackageManagement.VisualStudio
     [Microsoft.VisualStudio.Utilities.Order(After = nameof(ProjectKNuGetProjectProvider))]
     public class CpsPackageReferenceProjectProvider : IProjectSystemProvider
     {
+        private readonly string RestoreProjectStyle = "RestoreProjectStyle";
+        private readonly string TargetFramework = "TargetFramework";
+        private readonly string TargetFrameworks = "TargetFrameworks";
+
         private readonly IProjectSystemCache _projectSystemCache;
 
         [ImportingConstructor]
@@ -56,32 +61,31 @@ namespace NuGet.PackageManagement.VisualStudio
             {
                 return false;
             }
-            var restoreProjectStyle = string.Empty;
-            var targetFramework = string.Empty;
-            var targetFrameworks = string.Empty;
 
-            var hasRestoreProjectStyle = context
-                .MSBuildProperties
-                .TryGetValue(ProjectSystemProviderContext.RestoreProjectStyle, out restoreProjectStyle) 
-                && !string.IsNullOrEmpty(restoreProjectStyle);
-
-            var hasTargetFramework = context
-                .MSBuildProperties
-                .TryGetValue(ProjectSystemProviderContext.TargetFramework, out targetFramework)
-                && !string.IsNullOrEmpty(targetFramework);
-
-            var hasTargetFrameworks = context
-                .MSBuildProperties
-                .TryGetValue(ProjectSystemProviderContext.TargetFrameworks, out targetFrameworks)
-                && !string.IsNullOrEmpty(targetFrameworks);
-
-            // check for RestoreProjectStyle property is set and if set to PackageReference then return false
-            if (hasRestoreProjectStyle && !restoreProjectStyle.Equals(ProjectStyle.PackageReference.ToString(), StringComparison.OrdinalIgnoreCase))
+            // Check if the project is not CPS capable or if it is CPS capable then it does not have TargetFramework(s), if so then return false
+            if (!hierarchy.IsCapabilityMatch("CPS"))
             {
                 return false;
             }
-            // Check if the project is not CPS capable or if it is CPS capable then it does not have TargetFramework(s), if so then return false
-            else if (!(hierarchy.IsCapabilityMatch("CPS") && (hasTargetFramework || hasTargetFrameworks)))
+
+            var buildPropertyStorage = hierarchy as IVsBuildPropertyStorage;
+
+            // read MSBuild property RestoreProjectStyle which can be set to any NuGet project sytle
+            // and pass it on to NugetFactory which can pass it to each NuGet project provider to consume.
+            var restoreProjectStyle = VsHierarchyUtility.GetMSBuildProperty(buildPropertyStorage, RestoreProjectStyle);
+
+            var targetFramework = VsHierarchyUtility.GetMSBuildProperty(buildPropertyStorage, TargetFramework);
+
+            var targetFrameworks = VsHierarchyUtility.GetMSBuildProperty(buildPropertyStorage, TargetFrameworks);
+
+            // check for RestoreProjectStyle property is set and if not set to PackageReference then return false
+            if (!(string.IsNullOrEmpty(restoreProjectStyle) || 
+                restoreProjectStyle.Equals(ProjectStyle.PackageReference.ToString(), StringComparison.OrdinalIgnoreCase)))
+            {
+                return false;
+            }
+            // check whether TargetFramework or TargetFrameworks property is set, else return false
+            else if (string.IsNullOrEmpty(targetFramework) && string.IsNullOrEmpty(targetFrameworks))
             {
                 return false;
             }

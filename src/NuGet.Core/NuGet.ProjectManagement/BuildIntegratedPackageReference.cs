@@ -52,5 +52,36 @@ namespace NuGet.ProjectManagement
 
             return new PackageIdentity(dependency.Name, version);
         }
+
+        /// <summary>
+        /// Get allowed version range.
+        /// </summary>
+        private static VersionRange GetAllowedVersions(LibraryDependency dependency)
+        {
+            if (dependency == null)
+            {
+                throw new ArgumentNullException(nameof(dependency));
+            }
+
+            var minVersion = GetMinVersion(dependency);
+
+            if (dependency.AutoReferenced)
+            {
+                return new VersionRange(
+                    minVersion: minVersion,
+                    includeMinVersion: true,
+                    maxVersion: minVersion,
+                    includeMaxVersion: true);
+            }
+
+            // Return null if no range existed
+            return dependency.LibraryRange?.VersionRange;
+        }
+
+        private static NuGetVersion GetMinVersion(LibraryDependency dependency)
+        {
+            // MinVersion may not exist for ranges such as ( , 2.0.0];
+            return dependency.LibraryRange?.VersionRange?.MinVersion ?? new NuGetVersion(0, 0, 0);
+        }
     }
 }

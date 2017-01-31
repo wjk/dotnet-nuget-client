@@ -109,30 +109,26 @@ namespace NuGet.PackageManagement.UI
                 }
                 else if (project is BuildIntegratedNuGetProject)
                 {
-                    var graphProvider = (IDependencyGraphProject)project;
-                    var specs = await graphProvider.GetPackageSpecsAsync(cacheContext);
+                    var packageReferences = await project.GetInstalledPackagesAsync(CancellationToken.None);
 
                     // First the lowest auto referenced version of this package.
-                    var autoReferenced = specs.SelectMany(spec =>
-                                            spec.TargetFrameworks.SelectMany(e => e.Dependencies)
-                                            .Concat(spec.Dependencies))
-                                        .Where(e => e.AutoReferenced
-                                            && StringComparer.OrdinalIgnoreCase.Equals(searchResultPackage.Id, e.Name))
-                                        .OrderBy(e => e.LibraryRange.VersionRange?.MinVersion ?? EmptyVersion)
-                                        .FirstOrDefault();
+                    var autoReferenced = packageReferences.Where(e => StringComparer.OrdinalIgnoreCase.Equals(searchResultPackage.Id, e.PackageIdentity.Id)
+                                                                      && e.PackageIdentity.Version != null)
+                                                        .Select(e => e as BuildIntegratedPackageReference)
+                                                        .Where(e => e?.Dependency?.AutoReferenced == true)
+                                                        .OrderBy(e => e.PackageIdentity.Version)
+                                                        .FirstOrDefault();
 
                     if (autoReferenced != null)
                     {
                         // Add constraint for auto referenced package.
-                        var minVersion = autoReferenced.LibraryRange.VersionRange.MinVersion ?? EmptyVersion;
-
                         var constaint = new ProjectVersionConstraint()
                         {
                             ProjectName = project.GetMetadata<string>(NuGetProjectMetadataKeys.Name),
                             VersionRange = new VersionRange(
-                                minVersion: minVersion,
+                                minVersion: autoReferenced.PackageIdentity.Version,
                                 includeMinVersion: true,
-                                maxVersion: minVersion,
+                                maxVersion: autoReferenced.PackageIdentity.Version,
                                 includeMaxVersion: true),
 
                             IsAutoReferenced = true,

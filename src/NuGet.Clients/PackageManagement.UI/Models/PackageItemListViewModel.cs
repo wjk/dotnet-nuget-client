@@ -276,11 +276,7 @@ namespace NuGet.PackageManagement.UI
                 .MinOrDefault();
 
             // Set auto referenced to true any reference for the given id contains the flag.
-            AutoReferenced = installedPackages
-                .Where(e => StringComparer.OrdinalIgnoreCase.Equals(Id, e.Id))
-                .SelectMany(e => e.PackageReferences)
-                .Select(e => e as BuildIntegratedPackageReference)
-                .Any(e => e?.Dependency?.AutoReferenced == true);
+            AutoReferenced = installedPackages.IsAutoReferenced(Id);
 
             _backgroundLoader = AsyncLazy.New(
                 async () =>

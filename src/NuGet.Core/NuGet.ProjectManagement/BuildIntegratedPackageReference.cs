@@ -27,7 +27,7 @@ namespace NuGet.ProjectManagement
                   userInstalled: true,
                   developmentDependency: dependency?.SuppressParent == LibraryIncludeFlags.All,
                   requireReinstallation: false,
-                  allowedVersions: dependency?.LibraryRange?.VersionRange)
+                  allowedVersions: GetAllowedVersions(dependency))
         {
             if (dependency == null)
             {

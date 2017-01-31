@@ -88,6 +88,25 @@ namespace NuGet.PackageManagement.UI
                 .Select(g => new PackageIdentity(g.Key, g.MinOrDefault()))
                 .ToArray();
         }
+
+        /// <summary>
+        /// True if any package reference is AutoReferenced=true.
+        /// </summary>
+        public static bool IsAutoReferenced(this IEnumerable<PackageCollectionItem> packages, string id)
+        {
+            return packages.Where(e => StringComparer.OrdinalIgnoreCase.Equals(id, e.Id))
+                .Any(e => e.IsAutoReferenced());
+        }
+    }
+
+    internal static class PackageCollectionItemExtensions
+    {
+        public static bool IsAutoReferenced(this PackageCollectionItem package)
+        {
+            return package.PackageReferences
+                .Select(e => e as BuildIntegratedPackageReference)
+                .Any(e => e?.Dependency?.AutoReferenced == true);
+        }
     }
 
     internal static class VersionCollectionExtensions

@@ -101,6 +101,7 @@ namespace NuGet.PackageManagement.UI
         public async Task<IEnumerable<IPackageSearchMetadata>> GetPackagesWithUpdatesAsync(string searchText, SearchFilter searchFilter, CancellationToken cancellationToken)
         {
             var packages = _installedPackages
+                .Where(p => !p.IsAutoReferenced())
                 .GetEarliest()
                 .Where(p => p.Id.IndexOf(searchText, StringComparison.OrdinalIgnoreCase) != -1)
                 .OrderBy(p => p.Id);

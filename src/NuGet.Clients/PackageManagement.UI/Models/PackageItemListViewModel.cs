@@ -12,6 +12,7 @@ using NuGet.Common;
 using NuGet.Packaging.Core;
 using NuGet.Protocol.Core.Types;
 using NuGet.Versioning;
+using NuGet.ProjectManagement;
 
 namespace NuGet.PackageManagement.UI
 {
@@ -267,12 +268,19 @@ namespace NuGet.PackageManagement.UI
             }
         }
 
-        public void UpdatePackageStatus(IEnumerable<PackageIdentity> installedPackages)
+        public void UpdatePackageStatus(IEnumerable<PackageCollectionItem> installedPackages)
         {
             // Get the minimum version installed in any target project/solution
             InstalledVersion = installedPackages
                 .GetPackageVersions(Id)
                 .MinOrDefault();
+
+            // Set auto referenced to true any reference for the given id contains the flag.
+            AutoReferenced = installedPackages
+                .Where(e => StringComparer.OrdinalIgnoreCase.Equals(Id, e.Id))
+                .SelectMany(e => e.PackageReferences)
+                .Select(e => e as BuildIntegratedPackageReference)
+                .Any(e => e?.Dependency?.AutoReferenced == true);
 
             _backgroundLoader = AsyncLazy.New(
                 async () =>

@@ -404,7 +404,7 @@ namespace NuGet.PackageManagement.UI
             _loadingStatusBar.ItemsLoaded = 0;
         }
 
-        public void UpdatePackageStatus(PackageIdentity[] installedPackages)
+        public void UpdatePackageStatus(PackageCollectionItem[] installedPackages)
         {
             // in this case, we only need to update PackageStatus of
             // existing items in the package list

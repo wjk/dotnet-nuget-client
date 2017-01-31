@@ -18,14 +18,14 @@ namespace NuGet.PackageManagement.UI
     /// </summary>
     internal class UpdatePackageFeed : PlainPackageFeedBase
     {
-        private readonly IEnumerable<PackageIdentity> _installedPackages;
+        private readonly IEnumerable<PackageCollectionItem> _installedPackages;
         private readonly IPackageMetadataProvider _metadataProvider;
         private readonly PackageSearchMetadataCache _cachedUpdates;
         private readonly Common.ILogger _logger;
         private readonly NuGetProject[] _projects;
 
         public UpdatePackageFeed(
-            IEnumerable<PackageIdentity> installedPackages,
+            IEnumerable<PackageCollectionItem> installedPackages,
             IPackageMetadataProvider metadataProvider,
             NuGetProject[] projects,
             PackageSearchMetadataCache optionalCachedUpdates,

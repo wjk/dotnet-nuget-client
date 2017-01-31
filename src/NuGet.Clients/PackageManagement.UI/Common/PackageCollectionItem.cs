@@ -1,29 +1,25 @@
-﻿using NuGet.Packaging.Core;
+﻿using NuGet.Packaging;
+using NuGet.Packaging.Core;
 using NuGet.Versioning;
-using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace NuGet.PackageManagement.UI
 {
     /// <summary>
-    /// id/version/autoreferenced
+    /// id, version, original PackageReference if available.
     /// </summary>
-    internal class PackageCollectionItem : PackageIdentity
+    public class PackageCollectionItem : PackageIdentity
     {
-        public bool AutoReferenced { get; }
+        /// <summary>
+        /// Installed package references.
+        /// </summary>
+        public List<PackageReference> PackageReferences { get; }
 
-        public PackageCollectionItem(string id, NuGetVersion version)
-            : this(id, version, autoReferenced: false)
-        {
-        }
-
-        public PackageCollectionItem(string id, NuGetVersion version, bool autoReferenced)
+        public PackageCollectionItem(string id, NuGetVersion version, IEnumerable<PackageReference> installedReferences)
             : base(id, version)
         {
-            AutoReferenced = autoReferenced;
+            PackageReferences = installedReferences?.ToList() ?? new List<PackageReference>();
         }
     }
 }

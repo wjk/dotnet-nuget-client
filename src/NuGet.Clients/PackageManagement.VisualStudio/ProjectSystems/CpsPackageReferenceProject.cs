@@ -197,7 +197,7 @@ namespace NuGet.PackageManagement.VisualStudio
         {
             return libraries
                 .Where(l => l.LibraryRange.TypeConstraint == LibraryDependencyTarget.Package)
-                .Select(l => new BuildIntegratedProjectReference(l));
+                .Select(l => new BuildIntegratedPackageReference(l, targetFramework));
         }
 
         public override async Task<bool> InstallPackageAsync(

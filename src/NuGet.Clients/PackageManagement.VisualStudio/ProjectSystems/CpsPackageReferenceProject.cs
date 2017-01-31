@@ -197,45 +197,7 @@ namespace NuGet.PackageManagement.VisualStudio
         {
             return libraries
                 .Where(l => l.LibraryRange.TypeConstraint == LibraryDependencyTarget.Package)
-                .Select(l => ToPackageReference(l, targetFramework));
-        }
-
-        private static PackageReference ToPackageReference(LibraryDependency library, NuGetFramework targetFramework)
-        {
-            // Default to the lowest SemVer version if the range does not contain a minimum.
-            // Example ( , 4.0.0]
-            var minVersion = library.LibraryRange.VersionRange.MinVersion 
-                ?? new NuGetVersion(0, 0, 0);
-
-            var identity = new PackageIdentity(
-                library.LibraryRange.Name,
-                minVersion);
-
-            // If this reference is hidden from parent projects treat it 
-            // as a development dependency.
-            var developmentDependency = library.SuppressParent == LibraryIncludeFlags.All;
-
-            // Pass the original range under allowed versions.
-            VersionRange allowedVersions = library.LibraryRange.VersionRange;
-
-            if (library.AutoReferenced)
-            {
-                // For AutoReferenced libraries restrict the allowed versions
-                // to the current version.
-                allowedVersions = new VersionRange(
-                    minVersion: minVersion,
-                    includeMinVersion: true,
-                    maxVersion: minVersion,
-                    includeMaxVersion: true);
-            }
-
-            return new PackageReference(
-                identity,
-                targetFramework,
-                userInstalled: true,
-                developmentDependency: developmentDependency,
-                requireReinstallation: false,
-                allowedVersions: allowedVersions);
+                .Select(l => new BuildIntegratedProjectReference(l));
         }
 
         public override async Task<bool> InstallPackageAsync(

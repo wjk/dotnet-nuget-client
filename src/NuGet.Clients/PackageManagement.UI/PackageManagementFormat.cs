@@ -17,7 +17,7 @@ namespace NuGet.PackageManagement.UI
         private readonly Configuration.ISettings _settings;
 
         private int SelectedPackageFormat = -1;
-        private bool DoNotShowDialogValue;
+        private int DoNotShowDialogValue = -1;
 
         public PackageManagementFormat(Configuration.ISettings settings)
         {
@@ -58,23 +58,24 @@ namespace NuGet.PackageManagement.UI
             }
         }
 
-        public bool IsDisabled
+        public bool Enabled
         {
             get
             {
-                if (DoNotShowDialogValue)
+                if (DoNotShowDialogValue != -1)
                 {
-                    return DoNotShowDialogValue;
+                    return DoNotShowDialogValue == 1;
                 }
 
                 string settingsValue = _settings.GetValue(PackageManagementSection, DoNotShowPackageManagementSelectionKey) ?? string.Empty;
-                DoNotShowDialogValue = IsSet(settingsValue, false);
-                return DoNotShowDialogValue;
+                var value = IsSet(settingsValue, false);
+                DoNotShowDialogValue = value ? 1 : 0;
+                return value;
             }
 
             set
             {
-                DoNotShowDialogValue = value;
+                DoNotShowDialogValue = value ? 1 : 0;
             }
         }
 

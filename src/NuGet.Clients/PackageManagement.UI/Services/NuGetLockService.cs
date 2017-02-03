@@ -1,6 +1,10 @@
 ﻿// Copyright (c) .NET Foundation. All rights reserved.
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
+using Microsoft.VisualStudio.Shell;
+using Microsoft.VisualStudio.Threading;
+using NuGet.Common;
+using NuGet.ProjectManagement;
 using System;
 using System.ComponentModel.Composition;
 using System.Runtime.CompilerServices;
@@ -18,7 +22,43 @@ namespace NuGet.PackageManagement.UI
     {
         private readonly SemaphoreSlim _semaphore = new SemaphoreSlim(1, 1);
 
+        private readonly JoinableTaskCollection _joinableCollection;
+        private readonly JoinableTaskFactory _joinableFactory;
+
         public bool IsLockHeld => _semaphore.CurrentCount == 0;
+
+        public NuGetLockService()
+        {
+            var joinableTaskContextNode = new JoinableTaskContextNode(ThreadHelper.JoinableTaskContext);
+            _joinableCollection = joinableTaskContextNode.CreateCollection();
+            _joinableFactory = joinableTaskContextNode.CreateFactory(_joinableCollection);
+        }
+
+        public JoinableTask<T> EnterNuGetOperation<T>(Func<System.Threading.Tasks.Task<T>> execute, CancellationToken token)
+        {
+            return _joinableFactory.RunAsync<T>(async delegate
+            {
+                using (_joinableCollection.Join())
+                {
+                    using (await AcquireLockAsync(token))
+                    {
+                        return await NuGetUIThreadHelper.JoinableTaskFactory.RunAsync<T>(async () =>
+                        {
+                            return await execute();
+                        });
+                    }
+                }
+            });
+        }
+
+        public JoinableTask EnterNuGetOperation(Func<System.Threading.Tasks.Task> execute, CancellationToken token)
+        {
+            return EnterNuGetOperation<bool>(async () =>
+            {
+                await execute();
+                return true;
+            }, token);
+        }
 
         public IDisposable AcquireLock()
         {

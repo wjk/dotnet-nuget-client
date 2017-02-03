@@ -1,6 +1,9 @@
 ﻿// Copyright (c) .NET Foundation. All rights reserved.
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information.
 
+using Microsoft.VisualStudio.Threading;
+using NuGet.Common;
+using NuGet.ProjectManagement;
 using System;
 using System.Threading;
 
@@ -15,6 +18,10 @@ namespace NuGet.PackageManagement.UI
         /// Gets a value indicating whether any kind of lock is held.
         /// </summary>
         bool IsLockHeld { get; }
+
+        JoinableTask<T> EnterNuGetOperation<T>(Func<System.Threading.Tasks.Task<T>> execute, CancellationToken token);
+
+        JoinableTask EnterNuGetOperation(Func<System.Threading.Tasks.Task> execute, CancellationToken token);
 
         /// <summary>
         /// Obtains a lock, asynchronously awaiting for the lock if it is not immediately awailable.

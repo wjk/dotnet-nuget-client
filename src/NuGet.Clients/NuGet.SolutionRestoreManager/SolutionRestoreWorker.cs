@@ -13,6 +13,7 @@ using Microsoft.VisualStudio.Threading;
 using NuGet.PackageManagement.UI;
 using NuGet.PackageManagement.VisualStudio;
 using Task = System.Threading.Tasks.Task;
+using NuGet.ProjectManagement;
 
 namespace NuGet.SolutionRestoreManager
 {
@@ -387,19 +388,22 @@ namespace NuGet.SolutionRestoreManager
             await TaskScheduler.Default;
 
             using (var jobCts = CancellationTokenSource.CreateLinkedTokenSource(token))
-            using (var lck = await _lockService.Value.AcquireLockAsync(jobCts.Token))
             {
-                var componentModel = await _componentModel.GetValueAsync(jobCts.Token);
+                return await _lockService.Value.EnterNuGetOperation(async () =>
+                {
+                    var componentModel = await _componentModel.GetValueAsync(jobCts.Token);
 
-                var logger = componentModel.GetService<RestoreOperationLogger>();
-                await logger.StartAsync(
-                    request.RestoreSource,
-                    ErrorListProvider,
-                    _joinableFactory,
-                    jobCts);
+                    var logger = componentModel.GetService<RestoreOperationLogger>();
+                    await logger.StartAsync(
+                        request.RestoreSource,
+                        ErrorListProvider,
+                        _joinableFactory,
+                        jobCts);
 
-                var job = componentModel.GetService<ISolutionRestoreJob>();
-                return await job.ExecuteAsync(request, _restoreJobContext, logger, jobCts.Token);
+                    var job = componentModel.GetService<ISolutionRestoreJob>();
+                    return await job.ExecuteAsync(request, _restoreJobContext, logger, jobCts.Token);
+
+                }, jobCts.Token);
             }
         }
 

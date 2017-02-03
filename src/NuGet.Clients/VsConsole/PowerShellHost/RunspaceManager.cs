@@ -15,6 +15,7 @@ using NuGet.Configuration;
 using NuGet.PackageManagement;
 using NuGet.PackageManagement.VisualStudio;
 using NuGet.Protocol.Core.Types;
+using NuGet.PackageManagement.UI;
 
 namespace NuGetConsole.Host.PowerShell.Implementation
 {
@@ -53,13 +54,18 @@ namespace NuGetConsole.Host.PowerShell.Implementation
             DTE dte = ServiceLocator.GetInstance<DTE>();
 
             InitialSessionState initialSessionState = InitialSessionState.CreateDefault();
-            initialSessionState.Variables.Add(
+
+            NuGetUIThreadHelper.JoinableTaskFactory.Run(async () =>
+            {
+                await NuGetUIThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+                initialSessionState.Variables.Add(
                 new SessionStateVariableEntry(
                     "DTE",
                     (DTE2)dte,
                     "Visual Studio DTE automation object",
                     ScopedItemOptions.AllScope | ScopedItemOptions.Constant)
                 );
+            });
 
             // this is used by the functional tests
             var sourceRepositoryProvider = ServiceLocator.GetInstance<ISourceRepositoryProvider>();
@@ -75,7 +81,7 @@ namespace NuGetConsole.Host.PowerShell.Implementation
                 };
 
             var runspace = RunspaceFactory.CreateRunspace(host, initialSessionState);
-            runspace.ThreadOptions = PSThreadOptions.Default;
+            runspace.ThreadOptions = PSThreadOptions.UseCurrentThread;
             runspace.Open();
 
             //

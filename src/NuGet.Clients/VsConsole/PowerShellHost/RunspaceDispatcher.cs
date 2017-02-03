@@ -12,6 +12,9 @@ using System.Threading;
 using Microsoft.PowerShell;
 using NuGet;
 using PathUtility = NuGet.ProjectManagement.PathUtility;
+using NuGet.PackageManagement.UI;
+using Microsoft.VisualStudio.Shell;
+using System.Threading.Tasks;
 
 namespace NuGetConsole.Host.PowerShell.Implementation
 {
@@ -46,37 +49,37 @@ namespace NuGetConsole.Host.PowerShell.Implementation
             if (Runspace.DefaultRunspace == null)
             {
                 WithLock(() =>
+                {
+                    if (Runspace.DefaultRunspace == null)
                     {
-                        if (Runspace.DefaultRunspace == null)
-                        {
-                            // Set this runspace as DefaultRunspace so I can script DTE events.
-                            //
-                            // WARNING: MSDN says this is unsafe. The runspace must not be shared across
-                            // threads. I need this to be able to use ScriptBlock for DTE events. The
-                            // ScriptBlock event handlers execute on DefaultRunspace.
+                        // Set this runspace as DefaultRunspace so I can script DTE events.
+                        //
+                        // WARNING: MSDN says this is unsafe. The runspace must not be shared across
+                        // threads. I need this to be able to use ScriptBlock for DTE events. The
+                        // ScriptBlock event handlers execute on DefaultRunspace.
 
-                            Runspace.DefaultRunspace = _runspace;
-                        }
-                    });
+                        Runspace.DefaultRunspace = _runspace;
+                    }
+                });
             }
         }
 
         public void InvokeCommands(PSCommand[] profileCommands)
         {
             WithLock(() =>
+            {
+                using (var powerShell = System.Management.Automation.PowerShell.Create())
                 {
-                    using (var powerShell = System.Management.Automation.PowerShell.Create())
-                    {
-                        powerShell.Runspace = _runspace;
+                    powerShell.Runspace = _runspace;
 
-                        foreach (PSCommand command in profileCommands)
-                        {
-                            powerShell.Commands = command;
-                            powerShell.AddCommand("out-default");
-                            powerShell.Invoke();
-                        }
+                    foreach (PSCommand command in profileCommands)
+                    {
+                        powerShell.Commands = command;
+                        powerShell.AddCommand("out-default");
+                        powerShell.Invoke();
                     }
-                });
+                }
+            });
         }
 
         public Collection<PSObject> Invoke(string command, object[] inputs, bool outputResults)
@@ -124,6 +127,7 @@ namespace NuGetConsole.Host.PowerShell.Implementation
                 inputCollection.Add(record);
                 inputCollection.Complete();
                 result = InvokeCore(pipeline, inputCollection);
+
             }
 
             if (result.Count > 0)
@@ -222,7 +226,9 @@ namespace NuGetConsole.Host.PowerShell.Implementation
         private Collection<PSObject> InvokeCore(Pipeline pipeline, IEnumerable<object> inputs)
         {
             Collection<PSObject> output = null;
+
             WithLock(() => { output = inputs == null ? pipeline.Invoke() : pipeline.Invoke(inputs); });
+
             return output;
         }
 
@@ -231,25 +237,25 @@ namespace NuGetConsole.Host.PowerShell.Implementation
             bool hadTheLockAlready = IHaveTheLock;
 
             pipeline.StateChanged += (sender, e) =>
+            {
+                // Release the lock ASAP
+                bool finished = e.PipelineStateInfo.State == PipelineState.Completed ||
+                                e.PipelineStateInfo.State == PipelineState.Failed ||
+                                e.PipelineStateInfo.State == PipelineState.Stopped;
+                if (finished && !hadTheLockAlready)
                 {
-                    // Release the lock ASAP
-                    bool finished = e.PipelineStateInfo.State == PipelineState.Completed ||
-                                    e.PipelineStateInfo.State == PipelineState.Failed ||
-                                    e.PipelineStateInfo.State == PipelineState.Stopped;
-                    if (finished && !hadTheLockAlready)
-                    {
-                        // Release the dispatcher lock
-                        _dispatcherLock.Release();
-                    }
+                    // Release the dispatcher lock
+                    _dispatcherLock.Release();
+                }
 
-                    pipelineStateChanged.Raise(sender, e);
+                pipelineStateChanged.Raise(sender, e);
 
-                    // Dispose Pipeline object upon completion
-                    if (finished)
-                    {
-                        ((Pipeline)sender).Dispose();
-                    }
-                };
+                // Dispose Pipeline object upon completion
+                if (finished)
+                {
+                    ((Pipeline)sender).Dispose();
+                }
+            };
 
             if (inputs != null)
             {

@@ -175,7 +175,18 @@ namespace NuGetConsole
             // to switch to powershell pipeline execution thread. In order not to block the UI thread,
             // go off the UI thread. This is important, since, switches to UI thread,
             // using SwitchToMainThreadAsync will deadlock otherwise
-            await Task.Run(() => host.Execute(console, request.BuildCommand(), request.BuildInput()));
+            await NuGetUIThreadHelper.JoinableTaskFactory.RunAsync(async () =>
+            {
+                // we don't yield for a while, so in case we're in an inlined continuation,
+                // give our caller a chance to execute other continuations to avoid deadlocks.
+                await Task.Yield();
+
+                // We need the powershell script to run on the UI thread.
+                await NuGetUIThreadHelper.JoinableTaskFactory.SwitchToMainThreadAsync();
+
+
+                host.Execute(console, request.BuildCommand(), request.BuildInput());
+            });
         }
 
         private async Task<IHost> GetHostAsync()

@@ -53,6 +53,8 @@ namespace NuGet.SolutionRestoreManager
 
         public bool IsBusy => !_activeRestoreTask.IsCompleted;
 
+        public bool IsAutoRestoreAllowed { get; set; }
+
         [ImportingConstructor]
         public SolutionRestoreWorker(
             [Import(typeof(SVsServiceProvider))]
@@ -86,6 +88,9 @@ namespace NuGet.SolutionRestoreManager
             _solutionManager = solutionManager;
             _lockService = lockService;
             _logger = logger;
+
+            // by default allow auto restore to work everytime
+            IsAutoRestoreAllowed = true;
 
             var joinableTaskContextNode = new JoinableTaskContextNode(ThreadHelper.JoinableTaskContext);
             _joinableCollection = joinableTaskContextNode.CreateCollection();
@@ -243,6 +248,9 @@ namespace NuGet.SolutionRestoreManager
 
         public bool Restore(SolutionRestoreRequest request)
         {
+            // reset this flag to again enable auto restore to happen since build restore has been triggered
+            IsAutoRestoreAllowed = true;
+
             return _joinableFactory.Run(
                 async () =>
                 {
@@ -385,6 +393,12 @@ namespace NuGet.SolutionRestoreManager
             SolutionRestoreRequest request, CancellationToken token)
         {
             await TaskScheduler.Default;
+
+            if (request.RestoreSource == RestoreOperationSource.Implicit && !IsAutoRestoreAllowed)
+            {
+                // don't run auto restore since onbuild restore is going to happen
+                return true;
+            }
 
             using (var jobCts = CancellationTokenSource.CreateLinkedTokenSource(token))
             using (var lck = await _lockService.Value.AcquireLockAsync(jobCts.Token))

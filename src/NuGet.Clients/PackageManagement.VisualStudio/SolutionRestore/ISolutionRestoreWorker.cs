@@ -24,6 +24,11 @@ namespace NuGet.PackageManagement.VisualStudio
         bool IsBusy { get; }
 
         /// <summary>
+        /// Returnn true when auto restore needs to be avoided since on build estore is going to happen
+        /// </summary>
+        bool IsAutoRestoreAllowed { get; set; }
+
+        /// <summary>
         /// Schedules backgroud restore operation.
         /// </summary>
         /// <param name="request">Restore request.</param>

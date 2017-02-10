@@ -30,6 +30,8 @@
     <Reference Include="System.Core" />
     <Reference Include="System.Runtime" />
     <Reference Include="System.Threading.Tasks" />
+    <Reference Include="System.IO.Compression" />
+    <Reference Include="System.Net.Http" />
   </ItemGroup>
 
 </Project>

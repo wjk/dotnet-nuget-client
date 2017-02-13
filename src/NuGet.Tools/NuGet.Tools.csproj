@@ -1,7 +1,7 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="14.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.common.props')" />
-  <Import Project="..\..\..\build\common.props" />
+  <Import Project="..\..\build\common.props" />
   <Import Project="$(VSSDKRoot)\build\Microsoft.VSSDK.BuildTools.props" />
   <PropertyGroup>
     <NuGetPackageImportStamp>d386b432</NuGetPackageImportStamp>
@@ -24,6 +24,12 @@
     <TargetFrameworkVersion>v4.6</TargetFrameworkVersion>
     <AssemblyName>NuGet.Tools</AssemblyName>
     <VSSDKTargetPlatformRegRootSuffix>Exp</VSSDKTargetPlatformRegRootSuffix>
+    <MinimumVisualStudioVersion>15.0</MinimumVisualStudioVersion>
+    <FileUpgradeFlags>
+    </FileUpgradeFlags>
+    <UpgradeBackupLocation>
+    </UpgradeBackupLocation>
+    <OldToolsVersion>14.0</OldToolsVersion>
   </PropertyGroup>
   <PropertyGroup Condition="'$(VisualStudioVersion)' == '14.0'">
     <VsixOutputDirName>VS14</VsixOutputDirName>
@@ -226,16 +232,16 @@
       <Private>True</Private>
     </ProjectReference>
     <ProjectReference Include="..\NuGet.Commands\NuGet.Commands.csproj">
-        <Name>NuGet.Commands</Name>
-        <IncludeOutputGroupsInVSIX>BuiltProjectOutputGroup</IncludeOutputGroupsInVSIX>
-        <IncludeOutputGroupsInVSIXLocalOnly>DebugSymbolsProjectOutputGroup</IncludeOutputGroupsInVSIXLocalOnly>
-        <Private>True</Private>
+      <Name>NuGet.Commands</Name>
+      <IncludeOutputGroupsInVSIX>BuiltProjectOutputGroup</IncludeOutputGroupsInVSIX>
+      <IncludeOutputGroupsInVSIXLocalOnly>DebugSymbolsProjectOutputGroup</IncludeOutputGroupsInVSIXLocalOnly>
+      <Private>True</Private>
     </ProjectReference>
     <ProjectReference Include="..\NuGet.Indexing\NuGet.Indexing.csproj">
-        <Name>NuGet.Indexing</Name>
-        <IncludeOutputGroupsInVSIX>BuiltProjectOutputGroup</IncludeOutputGroupsInVSIX>
-        <IncludeOutputGroupsInVSIXLocalOnly>DebugSymbolsProjectOutputGroup</IncludeOutputGroupsInVSIXLocalOnly>
-        <Private>True</Private>
+      <Name>NuGet.Indexing</Name>
+      <IncludeOutputGroupsInVSIX>BuiltProjectOutputGroup</IncludeOutputGroupsInVSIX>
+      <IncludeOutputGroupsInVSIXLocalOnly>DebugSymbolsProjectOutputGroup</IncludeOutputGroupsInVSIXLocalOnly>
+      <Private>True</Private>
     </ProjectReference>
   </ItemGroup>
   <Choose>

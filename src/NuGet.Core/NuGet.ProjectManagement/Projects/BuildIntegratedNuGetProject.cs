@@ -37,6 +37,9 @@ namespace NuGet.ProjectManagement.Projects
         /// <summary>
         /// Returns the path to the assets file or the lock file.
         /// </summary>
+        /// <exception cref="ProjectNotLoadedException">
+        /// Thrown when the project has not been loaded yet, so the assets file path cannot be determined.
+        /// </exception>
         public abstract Task<string> GetAssetsFilePathAsync();
 
         public abstract Task<IReadOnlyList<PackageSpec>> GetPackageSpecsAsync(DependencyGraphCacheContext context);

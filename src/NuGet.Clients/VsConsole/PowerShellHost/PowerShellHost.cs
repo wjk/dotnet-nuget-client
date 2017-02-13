@@ -42,7 +42,7 @@ namespace NuGetConsole.Host.PowerShell.Implementation
         private readonly IRestoreEvents _restoreEvents;
         private readonly IRunspaceManager _runspaceManager;
         private readonly ISourceRepositoryProvider _sourceRepositoryProvider;
-        private readonly ISolutionManager _solutionManager;
+        private readonly IVsSolutionManager _solutionManager;
         private readonly ISettings _settings;
         private readonly ISourceControlManagerProvider _sourceControlManagerProvider;
         private readonly ICommonOperations _commonOperations;
@@ -105,7 +105,7 @@ namespace NuGetConsole.Host.PowerShell.Implementation
 
             // TODO: Take these as ctor arguments
             _sourceRepositoryProvider = ServiceLocator.GetInstance<ISourceRepositoryProvider>();
-            _solutionManager = ServiceLocator.GetInstance<ISolutionManager>();
+            _solutionManager = ServiceLocator.GetInstance<IVsSolutionManager>();
             _settings = ServiceLocator.GetInstance<ISettings>();
             _deleteOnRestartManager = ServiceLocator.GetInstance<IDeleteOnRestartManager>();
             _scriptExecutor = ServiceLocator.GetInstance<IScriptExecutor>();
@@ -373,7 +373,7 @@ namespace NuGetConsole.Host.PowerShell.Implementation
             // Fix for Bug 1426 Disallow ExecuteInitScripts from being executed concurrently by multiple threads.
             using (await _initScriptsLock.EnterAsync())
             {
-                if (!_solutionManager.IsSolutionOpen)
+                if (!_solutionManager.IsSolutionFullyLoaded)
                 {
                     return;
                 }

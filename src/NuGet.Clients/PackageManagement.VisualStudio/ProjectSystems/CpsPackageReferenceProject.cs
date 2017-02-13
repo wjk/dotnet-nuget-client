@@ -103,7 +103,7 @@ namespace NuGet.PackageManagement.VisualStudio
             var packageSpec = GetPackageSpec();
             if (packageSpec == null)
             {
-                throw new InvalidOperationException(
+                throw new ProjectNotLoadedException(
                     string.Format(Strings.ProjectNotLoaded_RestoreFailed, ProjectName));
             }
 

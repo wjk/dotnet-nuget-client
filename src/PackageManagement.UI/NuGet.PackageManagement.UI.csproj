@@ -410,6 +410,21 @@
       <Project>{eea49a74-6efc-410e-9745-bad367ac151d}</Project>
       <Name>NuGet.VisualStudio.Facade</Name>
     </ProjectReference>
+    <ProjectReference Include="..\NuGet.Indexing\NuGet.Indexing.csproj">
+        <Name>NuGet.Indexing</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\NuGet.ProjectManagement\NuGet.ProjectManagement.csproj">
+        <Name>NuGet.ProjectManagement</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\NuGet.PackageManagement\NuGet.PackageManagement.csproj">
+        <Name>NuGet.PackageManagement</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\NuGet.NuGet.Protocol.Core.Types\NuGet.NuGet.Protocol.Core.Types.csproj">
+        <Name>NuGet.NuGet.Protocol.Core.Types</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\NuGet.Resolver\NuGet.Resolver.csproj">
+        <Name>NuGet.Resolver</Name>
+    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <Resource Include="Resources\StatusOK_32x.png" />

@@ -140,8 +140,15 @@
       <Project>{32a23995-14c7-483b-98c3-0ae4185373ea}</Project>
       <Name>NuGet.Credentials</Name>
     </ProjectReference>
-	<ProjectReference Include="..\..\NuGet.Core\NuGet.Build.Tasks\NuGet.Build.Tasks.csproj"">
-	</ProjectReference>
+    <ProjectReference Include="..\NuGet.Build.Tasks\NuGet.Build.Tasks.csproj">
+        <Name>NuGet.Build.tasks</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\NuGet.ProjectManagement\NuGet.ProjectManagement.csproj">
+        <Name>NuGet.ProjectManagement</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\NuGet.PackageManagement\NuGet.PackageManagement.csproj">
+        <Name>NuGet.PackageManagement</Name>
+    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <None Include=".mergeignore">

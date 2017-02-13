@@ -73,6 +73,12 @@
       <Project>{6fd11460-39a3-4a10-ba63-7541b0a7d053}</Project>
       <Name>NuGet.Console.Types</Name>
     </ProjectReference>
+    <ProjectReference Include="..\NuGet.ProjectManagement\NuGet.ProjectManagement.csproj">
+        <Name>NuGet.ProjectManagement</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\NuGet.PackageManagement\NuGet.PackageManagement.csproj">
+        <Name>NuGet.PackageManagement</Name>
+    </ProjectReference>
   </ItemGroup>
   <Choose>
     <When Condition="'$(VisualStudioVersion)' == '14.0'">

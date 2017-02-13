@@ -267,6 +267,15 @@
       <Project>{eea49a74-6efc-410e-9745-bad367ac151d}</Project>
       <Name>NuGet.VisualStudio.Facade</Name>
     </ProjectReference>
+    <ProjectReference Include="..\NuGet.Build.Tasks\NuGet.Build.Tasks.csproj">
+        <Name>NuGet.Build.tasks</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\NuGet.Protocol.VisualStudio\NuGet.Protocol.VisualStudio.csproj">
+        <Name>NuGet.Protocol.VisualStudio</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\NuGet.PackageManagement\NuGet.PackageManagement.csproj">
+        <Name>NuGet.PackageManagement</Name>
+    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Import Project="$(EnlistmentRoot)\build\common.targets" />

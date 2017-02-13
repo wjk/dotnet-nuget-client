@@ -3,8 +3,7 @@
     "Microsoft.VisualStudio.OLE.Interop": "7.10.6070",
     "Microsoft.VisualStudio.Shell.Interop": "7.10.6071",
     "Microsoft.VisualStudio.Shell.Interop.8.0": "8.0.50727",
-    "Microsoft.VisualStudio.Shell.Interop.9.0": "9.0.30729",
-    "NuGet.Protocol.VisualStudio": "4.0.0-*"
+    "Microsoft.VisualStudio.Shell.Interop.9.0": "9.0.30729"
   },
   "frameworks": {
     "net46": {}

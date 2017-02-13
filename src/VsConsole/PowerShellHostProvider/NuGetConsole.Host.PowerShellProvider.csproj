@@ -61,6 +61,9 @@
       <Project>{5A79EEF3-51C0-4A14-8D37-50EF38AD835D}</Project>
       <Name>NuGetConsole.Host.PowerShell</Name>
     </ProjectReference>
+    <ProjectReference Include="..\..\NuGet.PackageManagement\NuGet.PackageManagement.csproj">
+      <Name>NuGet.PackageManagement</Name>
+    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Resources.resx">
